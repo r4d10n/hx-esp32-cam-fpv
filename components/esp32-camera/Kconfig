@@ -210,4 +210,167 @@ menu "Camera configuration"
             Full color range mode has a wider color range, so details in the image show more clearly.
             Please confirm the color range mode of the current camera sensor, incorrect color range mode may cause color difference in the final converted image.
             Full range mode is used by default. If this option is not selected, the format conversion function will be done using the limited range mode.
+
+    choice BOARD_SELECT
+        prompt "Board select"
+        default BOARD_ESP32S3_ETH
+        help
+            Select the board you are using.
+
+        config BOARD_ESP32CAM
+            bool "ESP32-CAM"
+        config BOARD_ESP32S3SENSE
+            bool "ESP32-S3-SENSE"
+        config BOARD_ESP32S3ETH
+            bool "ESP32-S3-ETH"
+    endchoice
+
+    config PIN_PWDN
+        int "PWDN pin"
+        default -1
+
+    config PIN_RESET
+        int "Reset pin"
+        default -1
+
+    config PIN_XCLK
+        int "XCLK pin"
+        default 3 if BOARD_ESP32S3ETH
+        default 15 if BOARD_ESP32S3SENSE
+        default 0
+
+    config PIN_SIOD
+        int "SIOD pin"
+        default 48 if BOARD_ESP32S3ETH
+        default 4 if BOARD_ESP32S3SENSE
+        default 26
+
+    config PIN_SIOC
+        int "SIOC pin"
+        default 47 if BOARD_ESP32S3ETH
+        default 5 if BOARD_ESP32S3SENSE
+        default 27
+
+    config PIN_D7
+        int "D7 pin"
+        default 18 if BOARD_ESP32S3ETH
+        default 48 if BOARD_ESP32S3SENSE
+        default 35
+
+    config PIN_D6
+        int "D6 pin"
+        default 15 if BOARD_ESP32S3ETH
+        default 47 if BOARD_ESP32S3SENSE
+        default 34
+
+    config PIN_D5
+        int "D5 pin"
+        default 38 if BOARD_ESP32S3ETH
+        default 21 if BOARD_ESP32S3SENSE
+        default 39
+
+    config PIN_D4
+        int "D4 pin"
+        default 40 if BOARD_ESP32S3ETH
+        default 14 if BOARD_ESP32S3SENSE
+        default 36
+
+    config PIN_D3
+        int "D3 pin"
+        default 42 if BOARD_ESP32S3ETH
+        default 13 if BOARD_ESP32S3SENSE
+        default 19
+
+    config PIN_D2
+        int "D2 pin"
+        default 46 if BOARD_ESP32S3ETH
+        default 12 if BOARD_ESP32S3SENSE
+        default 18
+
+    config PIN_D1
+        int "D1 pin"
+        default 45 if BOARD_ESP32S3ETH
+        default 11 if BOARD_ESP32S3SENSE
+        default 5
+
+    config PIN_D0
+        int "D0 pin"
+        default 41 if BOARD_ESP32S3ETH
+        default 10 if BOARD_ESP32S3SENSE
+        default 4
+
+    config PIN_VSYNC
+        int "VSYNC pin"
+        default 1 if BOARD_ESP32S3ETH
+        default 6 if BOARD_ESP32S3SENSE
+        default 25
+
+    config PIN_HREF
+        int "HREF pin"
+        default 2 if BOARD_ESP32S3ETH
+        default 7 if BOARD_ESP32S3SENSE
+        default 23
+
+    config PIN_PCLK
+        int "PCLK pin"
+        default 39 if BOARD_ESP32S3ETH
+        default 16 if BOARD_ESP32S3SENSE
+        default 22
+
+    config PIN_CAM_SD_CS
+        int "CAM SD CS pin"
+        default 4 if BOARD_ESP32S3ETH
+        default -1
+
+    config PIN_CAM_SD_MOSI
+        int "CAM SD MOSI pin"
+        default 6 if BOARD_ESP32S3ETH
+        default -1
+
+    config PIN_CAM_SD_MISO
+        int "CAM SD MISO pin"
+        default 5 if BOARD_ESP32S3ETH
+        default -1
+
+    config PIN_CAM_SD_SCLK
+        int "CAM SD SCLK pin"
+        default 7 if BOARD_ESP32S3ETH
+        default -1
+
+    config PIN_ETH_MISO
+        int "Ethernet MISO pin"
+        default 12 if BOARD_ESP32S3ETH
+        default -1
+
+    config PIN_ETH_MOSI
+        int "Ethernet MOSI pin"
+        default 11 if BOARD_ESP32S3ETH
+        default -1
+
+    config PIN_ETH_SCLK
+        int "Ethernet SCLK pin"
+        default 13 if BOARD_ESP32S3ETH
+        default -1
+
+    config PIN_ETH_CS
+        int "Ethernet CS pin"
+        default 14 if BOARD_ESP32S3ETH
+        default -1
+
+    config PIN_ETH_RST
+        int "Ethernet RST pin"
+        default 9 if BOARD_ESP32S3ETH
+        default -1
+
+    config PIN_ETH_INT
+        int "Ethernet INT pin"
+        default 10 if BOARD_ESP32S3ETH
+        default -1
+
+    config PIN_RGB_LED
+        int "RGB LED pin"
+        default 21 if BOARD_ESP32S3ETH
+        default 2 if BOARD_ESP32S3SENSE
+        default 33
+
 endmenu

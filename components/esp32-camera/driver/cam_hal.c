@@ -48,18 +48,6 @@ static const uint32_t JPEG_SOI_MARKER = 0xFFD8FF;  // written in little-endian f
 static const uint16_t JPEG_EOI_MARKER = 0xD9FF;  // written in little-endian for esp32
 size_t (*data_available_callback)(void * cam_obj,const uint8_t* data, size_t count, bool last);
 
-static int cam_verify_jpeg_soi(const uint8_t *inbuf, uint32_t length)
-{
-    for (uint32_t i = 0; i < length; i++) {
-        if (memcmp(&inbuf[i], &JPEG_SOI_MARKER, 3) == 0) {
-            //ESP_LOGW(TAG, "SOI: %d", (int) i);
-            return i;
-        }
-    }
-    ESP_LOGW(TAG, "NO-SOI");
-    return -1;
-}
-
 static int cam_verify_jpeg_eoi(const uint8_t *inbuf, uint32_t length)
 {
     int offset = -1;
@@ -290,16 +278,16 @@ static esp_err_t cam_dma_config(const camera_config_t *config)
     CAM_CHECK(cam_obj->frames != NULL, "frames malloc failed", ESP_FAIL);
 
     uint8_t dma_align = 0;
-    size_t fb_size = cam_obj->fb_size;
+    // size_t fb_size = cam_obj->fb_size; // Unused variable
     if (cam_obj->psram_mode) {
         dma_align = ll_cam_get_dma_align(cam_obj);
-        if (cam_obj->fb_size < cam_obj->recv_size) {
-            fb_size = cam_obj->recv_size;
-        }
+        // if (cam_obj->fb_size < cam_obj->recv_size) { // Unused variable
+        //     fb_size = cam_obj->recv_size; // Unused variable
+        // } // Unused variable
     }
 
     /* Allocate memory for frame buffer */
-    size_t alloc_size = 16;//fb_size * sizeof(uint8_t) + dma_align;
+    size_t alloc_size = 16;//fb_size * sizeof(uint8_t) + dma_align; // fb_size was unused
     uint32_t _caps = MALLOC_CAP_8BIT;
     if (CAMERA_FB_IN_DRAM == config->fb_location) {
         _caps |= MALLOC_CAP_INTERNAL;

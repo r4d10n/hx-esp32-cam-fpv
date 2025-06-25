@@ -27,6 +27,7 @@
 #include "cam_hal.h"
 #include "esp_camera.h"
 #include "xclk.h"
+#include "board.h" // Added board.h include
 #if CONFIG_OV2640_SUPPORT
 #include "ov2640.h"
 #endif

@@ -193,11 +193,11 @@ static int calc_sysclk(int xclk, bool pll_bypass, int pll_multiplier, int pll_sy
 
     unsigned int PLL_CLK = pll_bypass?(xclk):(VCO / pll_sys_div * 2 / 5);//5 here is 10bit mode / 2, for 8bit it should be 4 (reg 0x3034)
 
-    unsigned int PCLK = PLL_CLK / pll_pclk_root_div / ((pclk_manual && pclk_div)?pclk_div:2);
+    // unsigned int PCLK = PLL_CLK / pll_pclk_root_div / ((pclk_manual && pclk_div)?pclk_div:2); // Unused variable
 
     unsigned int SYSCLK = PLL_CLK / 4;
 
-    //ESP_LOGI(TAG, "Calculated XVCLK: %d Hz, REFIN: %u Hz, VCO: %u Hz, PLL_CLK: %u Hz, SYSCLK: %u Hz, PCLK: %u Hz", xclk, REFIN, VCO, PLL_CLK, SYSCLK, PCLK);
+    //ESP_LOGI(TAG, "Calculated XVCLK: %d Hz, REFIN: %u Hz, VCO: %u Hz, PLL_CLK: %u Hz, SYSCLK: %u Hz, PCLK: %u Hz", xclk, REFIN, VCO, PLL_CLK, SYSCLK, /*PCLK*/0);
     return SYSCLK;
 }
 
