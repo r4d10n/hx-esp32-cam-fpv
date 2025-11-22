@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HX ESP32 FPV GS</string>
+    <string name="app_description">Digital FPV Ground Station</string>
+
+    <!-- Video Decoder -->
+    <string name="decoder_initializing">Initializing video decoder...</string>
+    <string name="decoder_error">Decoder error</string>
+    <string name="no_video_signal">No video signal</string>
+
+    <!-- Main Screen -->
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="recording">Recording</string>
+    <string name="start_recording">Start Recording</string>
+    <string name="stop_recording">Stop Recording</string>
+    <string name="settings">Settings</string>
+    <string name="statistics">Statistics</string>
+
+    <!-- OSD Elements -->
+    <string name="rssi">RSSI</string>
+    <string name="link_quality">Link Quality</string>
+    <string name="latency">Latency</string>
+    <string name="fps">FPS</string>
+    <string name="bitrate">Bitrate</string>
+    <string name="battery">Battery</string>
+    <string name="gps">GPS</string>
+
+    <!-- Settings -->
+    <string name="osd_settings">OSD Settings</string>
+    <string name="video_settings">Video Settings</string>
+    <string name="connection_settings">Connection Settings</string>
+    <string name="appearance_settings">Appearance</string>
+
+    <!-- Status -->
+    <string name="connected">Connected</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="no_signal">No Signal</string>
+    <string name="weak_signal">Weak Signal</string>
+    <string name="good_signal">Good Signal</string>
+    <string name="excellent_signal">Excellent Signal</string>
+</resources>

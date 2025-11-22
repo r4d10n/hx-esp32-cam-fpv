@@ -1,0 +1,85 @@
+# HX-ESP32 FPV Ground Station - Android Application
+# Complete File Structure
+
+## Build Configuration Files
+android-gs/
+├── build.gradle.kts              # Root build configuration
+├── settings.gradle.kts           # Project settings
+├── gradle.properties             # Gradle properties
+├── gradle/wrapper/
+│   └── gradle-wrapper.properties # Gradle wrapper config
+└── .gitignore                    # Git ignore rules
+
+## Application Module
+app/
+├── build.gradle.kts              # App module build config
+├── proguard-rules.pro            # ProGuard rules for release
+└── src/
+    ├── main/
+    │   ├── AndroidManifest.xml   # App manifest
+    │   ├── java/com/hxesp32/fpvgs/
+    │   │   ├── FpvApplication.kt # Application class
+    │   │   ├── data/
+    │   │   │   └── model/
+    │   │   │       ├── ConnectionState.kt
+    │   │   │       ├── VideoState.kt
+    │   │   │       ├── RecordingState.kt
+    │   │   │       └── OsdData.kt
+    │   │   ├── service/
+    │   │   │   ├── UsbCommunicationService.kt
+    │   │   │   ├── VideoDecoderService.kt
+    │   │   │   └── RecordingService.kt
+    │   │   ├── usb/
+    │   │   │   └── UsbDeviceManager.kt
+    │   │   ├── video/
+    │   │   │   ├── H264Decoder.kt
+    │   │   │   ├── VideoStreamParser.kt
+    │   │   │   ├── MediaCodecHelper.kt
+    │   │   │   └── VideoRenderer.kt
+    │   │   ├── osd/
+    │   │   │   └── OsdOverlay.kt
+    │   │   ├── viewmodel/
+    │   │   │   └── MainViewModel.kt
+    │   │   └── ui/
+    │   │       ├── MainActivity.kt
+    │   │       ├── SettingsActivity.kt
+    │   │       ├── MainScreen.kt
+    │   │       ├── SettingsScreen.kt
+    │   │       ├── StatisticsScreen.kt
+    │   │       └── theme/
+    │   │           ├── Theme.kt
+    │   │           └── Type.kt
+    │   └── res/
+    │       ├── values/
+    │       │   ├── strings.xml
+    │       │   ├── colors.xml
+    │       │   └── themes.xml
+    │       ├── values-night/
+    │       │   └── themes.xml
+    │       └── xml/
+    │           ├── device_filter.xml
+    │           ├── file_paths.xml
+    │           ├── backup_rules.xml
+    │           └── data_extraction_rules.xml
+    ├── test/                      # Unit tests
+    └── androidTest/               # Instrumentation tests
+
+## Documentation
+docs/
+├── ARCHITECTURE.md               # Detailed architecture documentation
+├── SETUP_GUIDE.md               # Development setup guide
+└── PROJECT_SUMMARY.md           # Project summary and statistics
+
+## Root Documentation
+├── README.md                     # Main project documentation
+├── USB_COMMUNICATION_GUIDE.md   # USB communication details
+└── ANDROID_VIDEO_OSD_IMPLEMENTATION.md
+
+## Total Statistics
+- Kotlin Files: 38
+- XML Files: 9
+- Markdown Docs: 6
+- Services: 3
+- Activities: 2
+- ViewModels: 1
+- Data Models: 4

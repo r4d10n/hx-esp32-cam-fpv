@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        "test_usb_streamer.c"
+    INCLUDE_DIRS
+        "."
+        "../include"
+    REQUIRES
+        unity
+        usb_streamer
+)

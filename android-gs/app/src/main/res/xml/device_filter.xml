@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ESP32-S3 USB Device Filter -->
+    <!-- VID: Espressif Systems (0x303A) -->
+    <!-- PID: Generic ESP32-S3 (0x1001) -->
+    <usb-device vendor-id="12346" product-id="4097" />
+
+    <!-- Alternative PIDs for different ESP32-S3 configurations -->
+    <usb-device vendor-id="12346" product-id="4098" />
+    <usb-device vendor-id="12346" product-id="4099" />
+
+    <!-- FTDI USB-Serial (for testing) -->
+    <usb-device vendor-id="1027" product-id="24577" />
+</resources>
