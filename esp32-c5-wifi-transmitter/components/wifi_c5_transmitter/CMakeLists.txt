@@ -1,0 +1,11 @@
+idf_component_register(
+    SRCS
+        "wifi_c5_transmitter.c"
+        "fec_encoder.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        esp_wifi
+        esp_timer
+        nvs_flash
+)

@@ -1,0 +1,72 @@
+Submodule 'components/bootloader/subproject/components/micro-ecc/micro-ecc' (https://github.com/kmackay/micro-ecc.git) registered for path 'components/bootloader/subproject/components/micro-ecc/micro-ecc'
+Cloning into '/tmp/esp-idf/components/bootloader/subproject/components/micro-ecc/micro-ecc'...
+Submodule 'components/bt/controller/lib_esp32' (https://github.com/espressif/esp32-bt-lib.git) registered for path 'components/bt/controller/lib_esp32'
+Cloning into '/tmp/esp-idf/components/bt/controller/lib_esp32'...
+Submodule 'components/bt/controller/lib_esp32c2/esp32c2-bt-lib' (https://github.com/espressif/esp32c2-bt-lib.git) registered for path 'components/bt/controller/lib_esp32c2/esp32c2-bt-lib'
+Cloning into '/tmp/esp-idf/components/bt/controller/lib_esp32c2/esp32c2-bt-lib'...
+Submodule 'components/bt/controller/lib_esp32c3_family' (https://github.com/espressif/esp32c3-bt-lib.git) registered for path 'components/bt/controller/lib_esp32c3_family'
+Cloning into '/tmp/esp-idf/components/bt/controller/lib_esp32c3_family'...
+Submodule 'components/bt/controller/lib_esp32c5/esp32c5-bt-lib' (https://github.com/espressif/esp32c5-bt-lib.git) registered for path 'components/bt/controller/lib_esp32c5/esp32c5-bt-lib'
+Cloning into '/tmp/esp-idf/components/bt/controller/lib_esp32c5/esp32c5-bt-lib'...
+Submodule 'components/bt/controller/lib_esp32c6/esp32c6-bt-lib' (https://github.com/espressif/esp32c6-bt-lib.git) registered for path 'components/bt/controller/lib_esp32c6/esp32c6-bt-lib'
+Cloning into '/tmp/esp-idf/components/bt/controller/lib_esp32c6/esp32c6-bt-lib'...
+Submodule 'components/bt/controller/lib_esp32h2/esp32h2-bt-lib' (https://github.com/espressif/esp32h2-bt-lib.git) registered for path 'components/bt/controller/lib_esp32h2/esp32h2-bt-lib'
+Cloning into '/tmp/esp-idf/components/bt/controller/lib_esp32h2/esp32h2-bt-lib'...
+Submodule 'components/bt/esp_ble_mesh/lib/lib' (https://github.com/espressif/esp-ble-mesh-lib.git) registered for path 'components/bt/esp_ble_mesh/lib/lib'
+Cloning into '/tmp/esp-idf/components/bt/esp_ble_mesh/lib/lib'...
+Submodule 'components/bt/host/nimble/nimble' (https://github.com/espressif/esp-nimble.git) registered for path 'components/bt/host/nimble/nimble'
+Cloning into '/tmp/esp-idf/components/bt/host/nimble/nimble'...
+Submodule 'components/cmock/CMock' (https://github.com/ThrowTheSwitch/CMock.git) registered for path 'components/cmock/CMock'
+Cloning into '/tmp/esp-idf/components/cmock/CMock'...
+Submodule 'vendor/c_exception' (https://github.com/throwtheswitch/cexception.git) registered for path 'components/cmock/CMock/vendor/c_exception'
+Submodule 'vendor/unity' (https://github.com/throwtheswitch/unity.git) registered for path 'components/cmock/CMock/vendor/unity'
+Cloning into '/tmp/esp-idf/components/cmock/CMock/vendor/c_exception'...
+Cloning into '/tmp/esp-idf/components/cmock/CMock/vendor/unity'...
+Submodule 'components/esp_coex/lib' (https://github.com/espressif/esp-coex-lib.git) registered for path 'components/esp_coex/lib'
+Cloning into '/tmp/esp-idf/components/esp_coex/lib'...
+Submodule 'components/esp_phy/lib' (https://github.com/espressif/esp-phy-lib.git) registered for path 'components/esp_phy/lib'
+Cloning into '/tmp/esp-idf/components/esp_phy/lib'...
+Submodule 'components/esp_wifi/lib' (https://github.com/espressif/esp32-wifi-lib.git) registered for path 'components/esp_wifi/lib'
+Cloning into '/tmp/esp-idf/components/esp_wifi/lib'...
+CMake Error at /tmp/esp-idf/tools/cmake/project.cmake:564 (__project):
+  The CMAKE_C_COMPILER:
+
+    riscv32-esp-elf-gcc
+
+  is not a full path and was not found in the PATH.
+
+  Tell CMake where to find the compiler by setting either the environment
+  variable "CC" or the CMake cache entry CMAKE_C_COMPILER to the full path to
+  the compiler, or to the compiler name if it is in the PATH.
+Call Stack (most recent call first):
+  CMakeLists.txt:11 (project)
+
+
+CMake Error at /tmp/esp-idf/tools/cmake/project.cmake:564 (__project):
+  The CMAKE_CXX_COMPILER:
+
+    riscv32-esp-elf-g++
+
+  is not a full path and was not found in the PATH.
+
+  Tell CMake where to find the compiler by setting either the environment
+  variable "CXX" or the CMake cache entry CMAKE_CXX_COMPILER to the full path
+  to the compiler, or to the compiler name if it is in the PATH.
+Call Stack (most recent call first):
+  CMakeLists.txt:11 (project)
+
+
+CMake Error at /tmp/esp-idf/tools/cmake/project.cmake:564 (__project):
+  The CMAKE_ASM_COMPILER:
+
+    riscv32-esp-elf-gcc
+
+  is not a full path and was not found in the PATH.
+
+  Tell CMake where to find the compiler by setting either the environment
+  variable "ASM" or the CMake cache entry CMAKE_ASM_COMPILER to the full path
+  to the compiler, or to the compiler name if it is in the PATH.
+Call Stack (most recent call first):
+  CMakeLists.txt:11 (project)
+
+

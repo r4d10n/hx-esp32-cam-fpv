@@ -1,0 +1,165 @@
+{
+  "build_status": "FAILED",
+  "timestamp": "2025-11-22",
+  "project": "ESP32-C6 WiFi Transmitter Firmware",
+  "target_device": "esp32c6",
+  "build_type": "CMake/ESP-IDF",
+
+  "summary": {
+    "can_build_now": false,
+    "reason": "Critical missing components and build environment",
+    "estimated_fix_time_minutes": 20,
+    "all_dependencies_available": true
+  },
+
+  "blockers": [
+    {
+      "id": 1,
+      "severity": "CRITICAL",
+      "type": "Build Environment",
+      "issue": "ESP-IDF Not Installed",
+      "affected_commands": ["idf.py set-target", "idf.py build"],
+      "current_status": "idf.py not found in PATH",
+      "fix": "Install ESP-IDF v5.0+ and source export.sh",
+      "estimated_time_minutes": 10
+    },
+    {
+      "id": 2,
+      "severity": "CRITICAL",
+      "type": "Missing Component",
+      "component": "fec_encoder",
+      "component_type": "Forward Error Correction Encoder",
+      "used_by": ["wifi_c6_transmitter"],
+      "missing_files": [
+        "/esp32-c6-wifi-transmitter/components/fec_encoder/CMakeLists.txt",
+        "/esp32-c6-wifi-transmitter/components/fec_encoder/fec_encoder.c",
+        "/esp32-c6-wifi-transmitter/components/fec_encoder/fec_encoder.h"
+      ],
+      "expected_error": "ld returned 1 exit status - undefined reference to 'fec_encode'",
+      "available_at": "/esp32-p4-mipi-fpv/components/wifi_c5_transmitter/",
+      "fix": "Copy fec_encoder files from esp32-p4-mipi-fpv project",
+      "estimated_time_minutes": 5
+    },
+    {
+      "id": 3,
+      "severity": "CRITICAL",
+      "type": "Missing Component",
+      "component": "esp32_ipc",
+      "component_type": "Inter-Processor Communication (SPI)",
+      "used_by": ["main"],
+      "missing_files": [
+        "/esp32-c6-wifi-transmitter/components/esp32_ipc/CMakeLists.txt",
+        "/esp32-c6-wifi-transmitter/components/esp32_ipc/include/esp32_ipc.h",
+        "/esp32-c6-wifi-transmitter/components/esp32_ipc/esp32_ipc_slave.c",
+        "/esp32-c6-wifi-transmitter/components/esp32_ipc/esp32_ipc_common.c"
+      ],
+      "expected_error": "ld returned 1 exit status - undefined reference to 'esp32_ipc_init_slave'",
+      "available_at": "/esp32-p4-mipi-fpv/components/esp32_ipc/",
+      "fix": "Copy esp32_ipc component from esp32-p4-mipi-fpv project",
+      "estimated_time_minutes": 5
+    }
+  ],
+
+  "components": [
+    {
+      "name": "wifi_c6_transmitter",
+      "status": "NOT_BUILDABLE",
+      "source_files_present": true,
+      "dependencies": ["esp_wifi", "esp_event", "esp_timer", "nvs_flash", "fec_encoder"],
+      "missing_dependencies": ["fec_encoder"],
+      "blocking_reason": "Missing fec_encoder component"
+    },
+    {
+      "name": "esp32_ipc",
+      "status": "MISSING",
+      "source_files_present": false,
+      "required_by": ["main"],
+      "blocking_reason": "Component directory not present in project"
+    },
+    {
+      "name": "main",
+      "status": "NOT_BUILDABLE",
+      "source_files_present": true,
+      "dependencies": ["nvs_flash", "esp_wifi", "esp_timer", "esp32_ipc", "wifi_c6_transmitter"],
+      "missing_dependencies": ["esp32_ipc", "wifi_c6_transmitter"],
+      "blocking_reason": "esp32_ipc missing, wifi_c6_transmitter blocked"
+    }
+  ],
+
+  "configuration": {
+    "sdkconfig_defaults": {
+      "target": "esp32c6",
+      "status": "OK"
+    },
+    "partition_table": {
+      "status": "MISSING_OPTIONAL",
+      "referenced_file": "partitions.csv"
+    }
+  },
+
+  "environment": {
+    "build_system": "ESP-IDF (CMake)",
+    "target_idf_version": "v5.0+",
+    "installed_tools": [],
+    "missing_tools": ["idf.py", "ESP-IDF framework"],
+    "platform": "Linux"
+  },
+
+  "build_checklist": {
+    "code_structure_verified": true,
+    "component_dependencies_identified": true,
+    "all_components_available": false,
+    "build_environment_ready": false,
+    "project_builds_without_errors": false,
+    "all_components_compile_successfully": false,
+    "project_links_without_errors": false
+  },
+
+  "fix_instructions": {
+    "phase_1": {
+      "title": "Install ESP-IDF",
+      "steps": [
+        "git clone --branch v5.1 https://github.com/espressif/esp-idf.git ~/esp-idf",
+        "cd ~/esp-idf && ./install.sh esp32c6",
+        "source ~/esp-idf/export.sh"
+      ]
+    },
+    "phase_2": {
+      "title": "Copy Missing Components",
+      "steps": [
+        "cp -r /esp32-p4-mipi-fpv/components/esp32_ipc /esp32-c6-wifi-transmitter/components/",
+        "mkdir -p /esp32-c6-wifi-transmitter/components/fec_encoder/include",
+        "cp /esp32-p4-mipi-fpv/components/wifi_c5_transmitter/fec_encoder.c /esp32-c6-wifi-transmitter/components/fec_encoder/",
+        "cp /esp32-p4-mipi-fpv/components/wifi_c5_transmitter/fec_encoder_wifi.h /esp32-c6-wifi-transmitter/components/fec_encoder/include/fec_encoder.h"
+      ]
+    },
+    "phase_3": {
+      "title": "Build Project",
+      "steps": [
+        "cd /esp32-c6-wifi-transmitter",
+        "idf.py set-target esp32c6",
+        "idf.py build"
+      ]
+    }
+  },
+
+  "dependencies_source": {
+    "fec_encoder": {
+      "available_at": "/home/user/hx-esp32-cam-fpv/esp32-p4-mipi-fpv/components/wifi_c5_transmitter/",
+      "files": [
+        "fec_encoder.c (1033 bytes)",
+        "fec_encoder_wifi.h (473 bytes)"
+      ]
+    },
+    "esp32_ipc": {
+      "available_at": "/home/user/hx-esp32-cam-fpv/esp32-p4-mipi-fpv/components/esp32_ipc/",
+      "files": [
+        "esp32_ipc_slave.c (8345 bytes)",
+        "esp32_ipc_master.c (8345 bytes)",
+        "esp32_ipc_common.c (1447 bytes)",
+        "CMakeLists.txt",
+        "include/esp32_ipc.h"
+      ]
+    }
+  }
+}

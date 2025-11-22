@@ -11,6 +11,7 @@ SRCS := src/main.cpp \
 	src/PI_HAL.cpp \
 	src/Comms.cpp \
 	src/Video_Decoder.cpp \
+	src/H264_Decoder.cpp \
 	src/utils/radiotap/radiotap.cpp \
 	../components/common/crc.cpp \
 	../components/common/fec.cpp \
@@ -65,6 +66,7 @@ INCLUDE  := -Isrc \
 	-I../components/common \
 	-I/usr/include/ \
 	-I/usr/include/freetype2 \
+	-I/usr/include/x86_64-linux-gnu \
 	-I$(IMGUI_DIR) \
 	-I$(IMGUI_DIR)/backends
 
@@ -79,7 +81,7 @@ CFLAGS = $(CXXFLAGS)
 #LDFLAGS := -L/usr/lib -L=/opt/vc/lib -lstdc++ -lm -lpthread -lz -lrt -lfreetype -lmmal_core -lmmal_util -lmmal_vc_client -lvcos -lbcm_host -lbrcmGLESv2 -lbrcmEGL -lts
 #LDFLAGS := -L/usr/lib -L=/opt/vc/lib -lstdc++ -lm -lpthread -lz -lrt -lfreetype -lSDL2 -lGLESv2 -lturbojpeg -lmmal_core -lmmal_util -lmmal_vc_client -lvcos -lepoxy
 LDFLAGS := -L/usr/lib/aarch64-linux-gnu/ -L/usr/lib/ -L/opt/vc/lib/ 
-LDLIBS := -lstdc++ -lm -lpthread -lz -lrt -lfreetype -lSDL2 -lturbojpeg -lpcap -lGLESv2 -lstdc++fs
+LDLIBS := -lstdc++ -lm -lpthread -lz -lrt -lfreetype -lSDL2 -lturbojpeg -lpcap -lGLESv2 -lstdc++fs -lavcodec -lavformat -lavutil -lswscale
 
 # flags required for dependency generation; passed to compilers
 DEPFLAGS = -MT $@ -MD -MP -MF $(DEPDIR)/$*.Td

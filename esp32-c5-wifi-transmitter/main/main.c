@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -215,13 +216,13 @@ static void stats_task(void *pvParameters)
         float tx_rate = (tx - last_tx) / 5.0f;
 
         ESP_LOGI(TAG, "=== Statistics ===");
-        ESP_LOGI(TAG, "RX: %.1f pkt/s (%u total)", rx_rate, rx);
-        ESP_LOGI(TAG, "TX: %.1f pkt/s (%u total)", tx_rate, tx);
+        ESP_LOGI(TAG, "RX: %.1f pkt/s (%" PRIu32 " total)", rx_rate, rx);
+        ESP_LOGI(TAG, "TX: %.1f pkt/s (%" PRIu32 " total)", tx_rate, tx);
 
         // Get WiFi stats
         wifi_tx_stats_t wifi_stats;
         if (wifi_tx_get_stats(&wifi_stats) == ESP_OK) {
-            ESP_LOGI(TAG, "WiFi: %.2f Mbps, %u packets, queue: %u%%",
+            ESP_LOGI(TAG, "WiFi: %.2f Mbps, %" PRIu32 " packets, queue: %" PRIu32 "%%",
                      wifi_stats.throughput_mbps,
                      (uint32_t)wifi_stats.packets_sent,
                      wifi_stats.queue_usage_percent);
@@ -230,7 +231,7 @@ static void stats_task(void *pvParameters)
         // Get IPC stats
         ipc_stats_t ipc_stats;
         if (ipc_get_stats(&ipc_stats) == ESP_OK) {
-            ESP_LOGI(TAG, "IPC: %.2f Mbps, %llu packets, %u errors",
+            ESP_LOGI(TAG, "IPC: %.2f Mbps, %llu packets, %" PRIu32 " errors",
                      ipc_stats.throughput_mbps,
                      ipc_stats.packets_received,
                      ipc_stats.crc_errors);

@@ -1,0 +1,11 @@
+idf_component_register(
+    SRCS
+        test_wifi_c5_transmitter.c
+        ../wifi_c5_transmitter.c
+    INCLUDE_DIRS
+        ../include
+        .
+    REQUIRES
+        wifi_c5_transmitter
+        unity
+)

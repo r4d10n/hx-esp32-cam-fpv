@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+/home/user/hx-esp32-cam-fpv/esp32-c5-wifi-transmitter/build/CMakeFiles/bootloader
+/home/user/hx-esp32-cam-fpv/esp32-c5-wifi-transmitter/build/CMakeFiles/bootloader.rule
+/home/user/hx-esp32-cam-fpv/esp32-c5-wifi-transmitter/build/CMakeFiles/bootloader-complete.rule
+/home/user/hx-esp32-cam-fpv/esp32-c5-wifi-transmitter/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+/home/user/hx-esp32-cam-fpv/esp32-c5-wifi-transmitter/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+/home/user/hx-esp32-cam-fpv/esp32-c5-wifi-transmitter/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+/home/user/hx-esp32-cam-fpv/esp32-c5-wifi-transmitter/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+/home/user/hx-esp32-cam-fpv/esp32-c5-wifi-transmitter/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+/home/user/hx-esp32-cam-fpv/esp32-c5-wifi-transmitter/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+/home/user/hx-esp32-cam-fpv/esp32-c5-wifi-transmitter/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule

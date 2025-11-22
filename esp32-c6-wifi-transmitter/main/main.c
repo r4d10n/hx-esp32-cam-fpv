@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
@@ -161,14 +162,14 @@ static void stats_task(void *arg)
                  s_stats.config_packets,
                  s_stats.telemetry_packets);
 
-        ESP_LOGI(TAG, "WiFi TX: %.2f Mbps, %llu packets, %llu failed, queue=%u%%",
+        ESP_LOGI(TAG, "WiFi TX: %.2f Mbps, %llu packets, %llu failed, queue=%" PRIu32 "%%",
                  wifi_stats.throughput_mbps,
                  wifi_stats.packets_sent,
                  wifi_stats.packets_failed,
                  wifi_stats.queue_usage_percent);
 
         if (wifi_stats.fec_blocks_sent > 0) {
-            ESP_LOGI(TAG, "FEC: %u redundancy blocks sent", wifi_stats.fec_blocks_sent);
+            ESP_LOGI(TAG, "FEC: %" PRIu32 " redundancy blocks sent", wifi_stats.fec_blocks_sent);
         }
 
         // Update for next interval
@@ -224,7 +225,7 @@ void app_main(void)
     ESP_ERROR_CHECK(ipc_slave_init(&ipc_config));
     ESP_ERROR_CHECK(ipc_slave_start());
 
-    ESP_LOGI(TAG, "IPC slave started: SPI @ %u MHz", IPC_SPI_FREQ_HZ / 1000000);
+    ESP_LOGI(TAG, "IPC slave started: SPI @ %" PRIu32 " MHz", (uint32_t)(IPC_SPI_FREQ_HZ / 1000000));
 
     // Wait for IPC to be ready
     ESP_LOGI(TAG, "Waiting for IPC connection from ESP32-P4...");

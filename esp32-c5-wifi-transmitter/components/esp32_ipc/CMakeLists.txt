@@ -1,0 +1,11 @@
+idf_component_register(
+    SRCS
+        "esp32_ipc_master.c"
+        "esp32_ipc_slave.c"
+        "esp32_ipc_common.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        driver
+        esp_timer
+)

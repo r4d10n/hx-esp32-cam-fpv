@@ -1,0 +1,62 @@
+Submodule 'components/heap/tlsf' (https://github.com/espressif/tlsf.git) registered for path 'components/heap/tlsf'
+Cloning into '/tmp/esp-idf/components/heap/tlsf'...
+Submodule 'components/json/cJSON' (https://github.com/DaveGamble/cJSON.git) registered for path 'components/json/cJSON'
+Cloning into '/tmp/esp-idf/components/json/cJSON'...
+Submodule 'components/lwip/lwip' (https://github.com/espressif/esp-lwip.git) registered for path 'components/lwip/lwip'
+Cloning into '/tmp/esp-idf/components/lwip/lwip'...
+Submodule 'components/mbedtls/mbedtls' (https://github.com/espressif/mbedtls.git) registered for path 'components/mbedtls/mbedtls'
+Cloning into '/tmp/esp-idf/components/mbedtls/mbedtls'...
+Submodule 'components/mqtt/esp-mqtt' (https://github.com/espressif/esp-mqtt.git) registered for path 'components/mqtt/esp-mqtt'
+Cloning into '/tmp/esp-idf/components/mqtt/esp-mqtt'...
+Submodule 'components/openthread/lib' (https://github.com/espressif/esp-thread-lib.git) registered for path 'components/openthread/lib'
+Cloning into '/tmp/esp-idf/components/openthread/lib'...
+Submodule 'components/openthread/openthread' (https://github.com/espressif/openthread.git) registered for path 'components/openthread/openthread'
+Cloning into '/tmp/esp-idf/components/openthread/openthread'...
+Submodule 'components/protobuf-c/protobuf-c' (https://github.com/protobuf-c/protobuf-c.git) registered for path 'components/protobuf-c/protobuf-c'
+Cloning into '/tmp/esp-idf/components/protobuf-c/protobuf-c'...
+Submodule 'components/spiffs/spiffs' (https://github.com/pellepl/spiffs.git) registered for path 'components/spiffs/spiffs'
+Cloning into '/tmp/esp-idf/components/spiffs/spiffs'...
+Submodule 'components/unity/unity' (https://github.com/ThrowTheSwitch/Unity.git) registered for path 'components/unity/unity'
+Cloning into '/tmp/esp-idf/components/unity/unity'...
+CMake Error at /tmp/esp-idf/tools/cmake/project.cmake:564 (__project):
+  The CMAKE_C_COMPILER:
+
+    xtensa-esp32-elf-gcc
+
+  is not a full path and was not found in the PATH.
+
+  Tell CMake where to find the compiler by setting either the environment
+  variable "CC" or the CMake cache entry CMAKE_C_COMPILER to the full path to
+  the compiler, or to the compiler name if it is in the PATH.
+Call Stack (most recent call first):
+  CMakeLists.txt:11 (project)
+
+
+CMake Error at /tmp/esp-idf/tools/cmake/project.cmake:564 (__project):
+  The CMAKE_CXX_COMPILER:
+
+    xtensa-esp32-elf-g++
+
+  is not a full path and was not found in the PATH.
+
+  Tell CMake where to find the compiler by setting either the environment
+  variable "CXX" or the CMake cache entry CMAKE_CXX_COMPILER to the full path
+  to the compiler, or to the compiler name if it is in the PATH.
+Call Stack (most recent call first):
+  CMakeLists.txt:11 (project)
+
+
+CMake Error at /tmp/esp-idf/tools/cmake/project.cmake:564 (__project):
+  The CMAKE_ASM_COMPILER:
+
+    xtensa-esp32-elf-gcc
+
+  is not a full path and was not found in the PATH.
+
+  Tell CMake where to find the compiler by setting either the environment
+  variable "ASM" or the CMake cache entry CMAKE_ASM_COMPILER to the full path
+  to the compiler, or to the compiler name if it is in the PATH.
+Call Stack (most recent call first):
+  CMakeLists.txt:11 (project)
+
+
