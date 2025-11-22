@@ -1,0 +1,9 @@
+idf_component_register(
+    SRCS
+        "h264_encoder.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        driver
+        esp_timer
+)

@@ -1,0 +1,12 @@
+idf_component_register(
+    SRCS
+        "mipi_camera.c"
+        "sensors/imx219.c"
+        "sensors/imx477.c"
+        "sensors/ov5647.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        driver
+        esp_timer
+)
