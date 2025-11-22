@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        "test_wifi_receiver.c"
+    INCLUDE_DIRS
+        "."
+        "../include"
+    REQUIRES
+        unity
+        wifi_receiver
+)

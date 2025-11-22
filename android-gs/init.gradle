@@ -1,0 +1,24 @@
+// Gradle initialization script to configure proxy with authentication
+allprojects {
+    buildscript {
+        repositories.all { ArtifactRepository repo ->
+            if (repo instanceof MavenArtifactRepository) {
+                def url = repo.url.toString()
+                repo.credentials {
+                    username = System.getenv('PROXY_USER') ?: 'container_container_01QhuKzWexD82i56yKxwYqfe--claude_code_remote--mean-these-prime-child'
+                    password = System.getenv('PROXY_PASS') ?: ''
+                }
+            }
+        }
+    }
+
+    repositories.all { ArtifactRepository repo ->
+        if (repo instanceof MavenArtifactRepository) {
+            def url = repo.url.toString()
+            repo.credentials {
+                username = System.getenv('PROXY_USER') ?: 'container_container_01QhuKzWexD82i56yKxwYqfe--claude_code_remote--mean-these-prime-child'
+                password = System.getenv('PROXY_PASS') ?: ''
+            }
+        }
+    }
+}
