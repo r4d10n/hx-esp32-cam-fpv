@@ -211,85 +211,114 @@ Performance:
 
 ## Q6: Is USB OTG bandwidth enough for 1080p60 video?
 
-**Answer:** YES, with massive headroom! USB OTG can handle 24× the required bandwidth.
+**Answer:** ⚠️ **CRITICAL CORRECTION** - ESP32-S3 only supports **USB Full-Speed (12 Mbps)**, NOT High-Speed!
 
-### Bandwidth Calculation:
+### Corrected Bandwidth Analysis:
 
-**USB 2.0 High-Speed Specifications:**
+**USB Full-Speed Specifications (ESP32-S3):**
 ```
-Signaling rate:     480 Mbps
-Theoretical max:    60 MB/s
-Practical max:      48 MB/s (80% efficiency)
-                    384 Mbps effective
-```
-
-**1080p60 H.264 Requirements:**
-```
-Resolution:         1920 × 1080 pixels
-Frame rate:         60 FPS
-Uncompressed:       1,492 Mbps (186 MB/s)
-
-H.264 Compressed:
-  High quality:     15-20 Mbps
-  Medium quality:   8-12 Mbps
-  Low quality:      4-8 Mbps
-
-Our target:         15 Mbps (1.875 MB/s)
+⚠️  ESP32-S3 USB: Full-Speed only (NOT High-Speed)
+Signaling rate:     12 Mbps
+Theoretical max:    1.5 MB/s
+Practical max:      1.0-1.2 MB/s (80-85% efficiency)
+                    8-10 Mbps effective
 ```
 
-**Bandwidth Budget:**
+**Video Requirements vs Available:**
+```
+Available USB bandwidth:  10 Mbps (1.25 MB/s)
+Protocol overhead (8%):   -0.8 Mbps
+Telemetry + OSD:          -0.1 Mbps
+─────────────────────────────────────
+Available for video:      9.1 Mbps (1.14 MB/s)
+```
+
+### What Works and What Doesn't:
+
+**❌ 1080p60 @ 15 Mbps - NOT POSSIBLE**
+```
+Required:  15 Mbps (1.875 MB/s)
+Available: 9.1 Mbps (1.14 MB/s)
+Result:    INSUFFICIENT BANDWIDTH
+```
+
+**✅ 720p60 @ 6 Mbps - RECOMMENDED FOR FPV**
+```
+Resolution:    1280 × 720 pixels
+Frame rate:    60 FPS
+H.264 bitrate: 6 Mbps
+USB required:  6.5 Mbps (with overhead)
+─────────────────────────────────────
+Utilization:   71%
+Margin:        2.6 Mbps (40%)
+Result:        ✅ SUPPORTED (RECOMMENDED)
+```
+
+**✅ 1080p30 @ 8 Mbps - WORKS (tight margin)**
+```
+Resolution:    1920 × 1080 pixels
+Frame rate:    30 FPS
+H.264 bitrate: 8 Mbps
+USB required:  8.6 Mbps (with overhead)
+─────────────────────────────────────
+Utilization:   95%
+Margin:        0.5 Mbps (5%)
+Result:        ✅ SUPPORTED (but tight)
+```
+
+### Corrected Bandwidth Budget (720p60):
+
 ```
 ┌──────────────────────────────────────────────┐
-│  USB OTG Bandwidth Analysis                 │
+│  USB Full-Speed Bandwidth Analysis           │
 ├──────────────────────────────────────────────┤
 │                                              │
-│  Available:                48.0 MB/s (100%)  │
+│  Available:                10.0 Mbps (100%)  │
 │                                              │
-│  Required for 1080p60:                       │
-│    Video data:              1.875 MB/s       │
-│    Protocol overhead:       0.125 MB/s       │
-│    Telemetry (1 Hz):        0.001 MB/s       │
-│    OSD data (10 Hz):        0.010 MB/s       │
-│    Statistics (1 Hz):       0.001 MB/s       │
+│  Required for 720p60:                        │
+│    Video data (6 Mbps):     6.0 Mbps         │
+│    Protocol overhead:       0.5 Mbps         │
+│    Telemetry (1 Hz):        0.01 Mbps        │
+│    OSD data (10 Hz):        0.08 Mbps        │
+│    Statistics (1 Hz):       0.01 Mbps        │
 │                           ─────────────       │
-│  Total required:            2.012 MB/s       │
+│  Total required:            6.6 Mbps         │
 │                                              │
-│  Utilization:               4.2%             │
-│  Headroom:                  45.99 MB/s       │
+│  Utilization:               66%              │
+│  Headroom:                  3.4 Mbps (34%)   │
 │                                              │
-│  ✅ Can support:                             │
-│     - 1080p240 @ 150 Mbps                    │
-│     - 4K60 @ 100 Mbps                        │
-│     - 24× current bitrate                    │
+│  ✅ CONCLUSION:                              │
+│     720p60 supported with good margin        │
 │                                              │
 └──────────────────────────────────────────────┘
 ```
 
-**Per-Frame Analysis:**
+**Per-Frame Analysis (720p60):**
 ```
-At 60 FPS with 15 Mbps target:
-  Bits per frame:       15 Mbps ÷ 60 = 250 Kbps
-  Bytes per frame:      31.25 KB
+At 60 FPS with 6 Mbps bitrate:
+  Bits per frame:       6 Mbps ÷ 60 = 100 Kbps
+  Bytes per frame:      12.5 KB
 
-With protocol overhead (22 bytes per packet):
-  Packets per frame:    31250 ÷ 492 = 64 packets
-  Overhead per frame:   64 × 22 = 1.4 KB
-  Total per frame:      32.65 KB
+With protocol overhead:
+  Overhead:             ~1 KB
+  Total per frame:      13.5 KB
 
 USB transfer time:
-  Time per frame:       32.65 KB ÷ 48 MB/s = 0.68 ms
+  Time per frame:       13.5 KB ÷ 1.25 MB/s = 10.8 ms
   Available time:       1000 ms ÷ 60 FPS = 16.67 ms
-  Utilization:          0.68 ÷ 16.67 = 4.1%
+  Utilization:          10.8 ÷ 16.67 = 65%
 
-Remaining time:         15.99 ms per frame for other work
+Remaining time:         5.87 ms per frame
 ```
 
 ### Conclusion:
-**USB OTG is MORE than sufficient!**
-- Only using 4.2% of available bandwidth
-- Can handle 20× higher bitrates
-- Can support 4K resolution at 60 FPS
-- Massive margin for telemetry, OSD, and statistics
+**USB Full-Speed limits to 720p60 or 1080p30**
+- 720p60 @ 6 Mbps: 66% utilization (RECOMMENDED)
+- 1080p30 @ 8 Mbps: 88% utilization (tight)
+- 1080p60: NOT possible without external USB hub
+- **Bottleneck: USB Full-Speed bandwidth**
+
+**Recommendation:** Use **720p60 @ 6 Mbps** for FPV - provides smooth 60 FPS with good quality and margin.
 
 ---
 
@@ -541,7 +570,7 @@ Composited and displayed at 60 Hz
 
 4. **FEC Decoding:** Done on ESP32-S3 after WiFi RX, recovers from 50% packet loss
 
-5. **USB OTG:** More than sufficient for 1080p60 (4.2% utilization, 24× headroom)
+5. **USB OTG:** ⚠️ Full-Speed ONLY (12 Mbps) - limits to 720p60 or 1080p30
 
 6. **Total Latency:** 41.7ms end-to-end (target: <100ms) ✅
 
@@ -549,11 +578,15 @@ Composited and displayed at 60 Hz
 
 ### Performance Verified:
 
-✅ **All targets achieved**
-- USB bandwidth: 96% unused (can support 4K60)
-- End-to-end latency: 41.7ms (58% margin)
-- FEC throughput: 84 Mbps (exceeds requirements)
-- All components optimized for real-time FPV
+✅ **Corrected Performance Targets**
+- **USB bandwidth:** Full-Speed limitation (12 Mbps)
+  - ❌ 1080p60 NOT possible (would need 15 Mbps)
+  - ✅ 720p60 @ 6 Mbps (66% utilization, RECOMMENDED)
+  - ✅ 1080p30 @ 8 Mbps (88% utilization, tight)
+- **End-to-end latency:** 41.7ms (58% margin) ✅
+- **FEC throughput:** 84 Mbps (exceeds requirements) ✅
+- **Bottleneck:** USB Full-Speed is the limiting factor
+- **Recommendation:** Use 720p60 for optimal FPV performance
 
 ---
 
