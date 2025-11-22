@@ -1,18 +1,20 @@
-# ESP32-P4 + ESP32-C5 High-Resolution FPV Implementation Plan
+# ESP32-P4 + ESP32-C5/C6 High-Resolution FPV Implementation Plan
 
 ## Executive Summary
 
 This document outlines the complete implementation of a next-generation FPV system using:
 - **ESP32-P4** for high-resolution MIPI camera capture and video processing
-- **ESP32-C5** for 2.4GHz/5GHz WiFi transmission
+- **ESP32-C5 or ESP32-C6** for 2.4GHz/5GHz WiFi 6 transmission
 - Inter-processor communication via SPI/SDIO
 - Support for resolutions up to 1920x1080 @ 60fps
+
+**Note:** The ESP32-C6 is integrated on the ESP32-P4 evaluation board, making it a convenient choice for development and prototyping.
 
 ## Hardware Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     AIR UNIT (ESP32-P4 + ESP32-C5)          │
+│                AIR UNIT (ESP32-P4 + ESP32-C5/C6)            │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  ┌──────────────────────────────────────┐                  │
@@ -27,14 +29,16 @@ This document outlines the complete implementation of a next-generation FPV syst
 │          │ (4-lane, 2.5Gbps)   │ (50MHz)                  │
 │          │                      │                           │
 │  ┌───────▼──────────┐   ┌───────▼───────────────┐         │
-│  │   MIPI Camera    │   │    ESP32-C5           │         │
+│  │   MIPI Camera    │   │  ESP32-C5 or C6       │         │
 │  │   (High Res)     │   │  - WiFi 6 (802.11ax)  │         │
 │  │                  │   │  - 2.4GHz + 5GHz      │         │
 │  │  Options:        │   │  - Packet injection   │         │
 │  │  - IMX219        │   │  - FEC encoder        │         │
-│  │  - IMX477        │   └───────────────────────┘         │
-│  │  - OV5647        │                                      │
-│  └──────────────────┘                                      │
+│  │  - IMX477        │   │  - BLE 5.3            │         │
+│  │  - OV5647        │   │                       │         │
+│  └──────────────────┘   │  * C6 integrated on   │         │
+│                         │    P4 eval board      │         │
+│                         └───────────────────────┘         │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -150,6 +154,63 @@ This document outlines the complete implementation of a next-generation FPV syst
 - **RAM:** 400 KB SRAM
 - **Flash:** Up to 4MB
 
+## ESP32-C6 Key Features
+
+### Wireless
+- **WiFi 6 (802.11ax):**
+  - 2.4GHz: up to 86Mbps
+  - 5GHz: up to 400Mbps
+- **Bluetooth 5.3**
+- **Zigbee and Thread support**
+- **Features:**
+  - OFDMA
+  - MU-MIMO
+  - TWT (Target Wake Time)
+  - Packet injection support
+  - Monitor mode
+
+### CPU & Memory
+- **CPU:** RISC-V @ 160MHz
+- **RAM:** 512 KB SRAM
+- **Flash:** Up to 4MB
+
+### Availability
+- **Integrated on ESP32-P4 evaluation board**
+- Widely available as standalone module
+- Lower cost than ESP32-C5
+
+## ESP32-C5 vs ESP32-C6 Comparison
+
+| Feature | ESP32-C5 | ESP32-C6 |
+|---------|----------|----------|
+| **CPU Speed** | 240 MHz | 160 MHz |
+| **RAM** | 400 KB | 512 KB |
+| **WiFi 6 (2.4GHz)** | Up to 86 Mbps | Up to 86 Mbps |
+| **WiFi 6 (5GHz)** | Up to 430 Mbps | Up to 400 Mbps |
+| **Bluetooth** | BLE 5.3 | BLE 5.3 |
+| **Additional** | - | Zigbee, Thread |
+| **On P4 Eval Board** | ❌ No | ✅ **Yes** |
+| **Availability** | Limited | ✅ Widely available |
+| **Power** | Lower | Lower |
+| **Cost** | Higher | ✅ Lower |
+| **Performance** | Slightly higher | Excellent |
+
+### Which to Choose?
+
+**Choose ESP32-C6 if:**
+- ✅ Using ESP32-P4 evaluation board (already included)
+- ✅ Want easier development setup
+- ✅ Need lower cost solution
+- ✅ 5GHz @ 400 Mbps is sufficient (still 33x higher than needed for 1080p60)
+- ✅ Want mature, widely available hardware
+
+**Choose ESP32-C5 if:**
+- Using custom PCB design
+- Need absolute maximum 5GHz throughput (430 vs 400 Mbps)
+- Building standalone transmitter module
+
+**Recommendation:** Use **ESP32-C6** for development and most production use cases. The integrated availability on the P4 eval board and wide market availability make it the practical choice. Performance is nearly identical for FPV applications.
+
 ## Inter-Processor Communication
 
 ### SPI Interface (Primary)
@@ -162,8 +223,8 @@ This document outlines the complete implementation of a next-generation FPV syst
 
 **Physical Connections:**
 ```
-ESP32-P4          ESP32-C5
---------          --------
+ESP32-P4          ESP32-C5/C6
+--------          -----------
 GPIO_MOSI   -->   GPIO_MOSI
 GPIO_MISO   <--   GPIO_MISO
 GPIO_CLK    -->   GPIO_CLK
@@ -175,7 +236,7 @@ GND         ---   GND
 **Data Flow:**
 
 ```
-ESP32-P4                              ESP32-C5
+ESP32-P4                              ESP32-C5/C6
    │                                     │
    │  ┌─────────────────┐               │
    │  │ H.264 Encoder   │               │
@@ -378,13 +439,15 @@ typedef void (*ipc_receive_cb_t)(const void *data, size_t size);
 esp_err_t ipc_slave_register_callback(ipc_receive_cb_t cb);
 ```
 
-### 4. ESP32-C5 WiFi Transmission
+### 4. ESP32-C5/C6 WiFi Transmission
 
-**File:** `esp32-p4-mipi-fpv/components/wifi_c5/wifi_transmitter.c`
+**Files:**
+- `esp32-c5-wifi-transmitter/components/wifi_c5_transmitter/wifi_c5_transmitter.c`
+- `esp32-c6-wifi-transmitter/components/wifi_c6_transmitter/wifi_c6_transmitter.c`
 
 ```c
 /**
- * @brief WiFi 6 packet injection for ESP32-C5
+ * @brief WiFi 6 packet injection for ESP32-C5/C6
  *
  * Transmits H.264-encoded video over WiFi using packet injection.
  */
@@ -466,7 +529,7 @@ esp_err_t wifi_transmitter_get_stats(wifi_tx_stats_t *stats);
                                            │ SPI (50MHz)
                                            │
 ┌──────────────────────────────────────────▼──────────────┐
-│                ESP32-C5 Processing                      │
+│              ESP32-C5/C6 Processing                     │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
 │                                  ┌──────────┐          │
@@ -651,12 +714,13 @@ Total:                       79ms
 - [ ] DMA transfers
 - [ ] Integration tests
 
-### Phase 4: ESP32-C5 WiFi Transmission (Week 4-5)
-- [ ] WiFi 6 initialization
+### Phase 4: ESP32-C5/C6 WiFi Transmission (Week 4-5)
+- [ ] WiFi 6 initialization (C5 or C6)
 - [ ] Packet injection
 - [ ] FEC encoding integration
 - [ ] Channel management
 - [ ] Unit tests
+- [ ] C5 and C6 variants testing
 
 ### Phase 5: Ground Station Integration (Week 5-6)
 - [ ] H.264 decoder (FFmpeg)
@@ -709,7 +773,22 @@ Total:                       79ms
 
 ## Bill of Materials (BOM)
 
-### Development Kit
+### Development Kit (with ESP32-C6)
+
+**Recommended for development - ESP32-C6 is already on the P4 eval board!**
+
+| Item | Qty | Unit Price | Total |
+|------|-----|------------|-------|
+| ESP32-P4-Function-EV-Board (includes C6) | 1 | $50 | $50 |
+| IMX219 Camera Module | 1 | $25 | $25 |
+| MicroSD Card (32GB) | 1 | $10 | $10 |
+| Breadboard + Jumpers | 1 | $10 | $10 |
+| Power Supply (5V 3A) | 1 | $10 | $10 |
+| **Total** | | | **$105** |
+
+### Development Kit (with ESP32-C5)
+
+**For custom designs or if C5-specific features are needed**
 
 | Item | Qty | Unit Price | Total |
 |------|-----|------------|-------|
@@ -723,11 +802,24 @@ Total:                       79ms
 
 ## Conclusion
 
-The ESP32-P4 + ESP32-C5 platform enables a significant upgrade:
+The ESP32-P4 + ESP32-C5/C6 platform enables a significant upgrade:
 - **4x resolution** (1080p vs 720p)
 - **2x frame rate** (60fps vs 30fps)
 - **Better compression** (H.264 vs MJPEG)
 - **Lower latency** (60-80ms vs 90-110ms)
 - **Better image quality** (IMX219/IMX477 vs OV5640)
 
-This implementation plan provides a complete roadmap for development, from hardware setup through testing and deployment.
+### Implementation Highlights
+
+**ESP32-C6 Advantages:**
+- ✅ Integrated on ESP32-P4 evaluation board (no additional hardware needed)
+- ✅ Lower development cost ($105 vs $120)
+- ✅ Widely available and well-supported
+- ✅ Excellent WiFi 6 performance (400 Mbps on 5GHz - 33x more than needed)
+- ✅ Additional protocols: Zigbee, Thread
+
+**Both C5 and C6 firmware variants are provided** in this repository:
+- `esp32-c5-wifi-transmitter/` - For ESP32-C5 standalone designs
+- `esp32-c6-wifi-transmitter/` - For ESP32-P4 eval board (recommended)
+
+This implementation plan provides a complete roadmap for development, from hardware setup through testing and deployment, with flexibility to choose the WiFi transmitter that best fits your needs.
