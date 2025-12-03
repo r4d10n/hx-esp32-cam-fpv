@@ -271,6 +271,9 @@ Comms::~Comms()
 {
     m_exit = true;
 
+    if (!m_impl)
+        return;
+
     m_impl->tx.packet_queue_cv.notify_all();
 
     for (auto& thread: m_impl->rx.threads)
