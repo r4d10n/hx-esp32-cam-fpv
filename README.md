@@ -1,4 +1,7 @@
 # hx-esp32-cam-fpv
+
+DeepWiki https://deepwiki.com/RomanLut/hx-esp32-cam-fpv
+
 Open source digital FPV system based on esp32cam.
 - [x] Fully functional video link
 - [x] Mavlink telemetry and RC
@@ -25,8 +28,13 @@ Open source digital FPV system based on esp32cam.
 - [x] dualboot images
 - [x] saving settings on camera
 - [x] **Release v0.3.2**
+- [x] use smaller packets for less losses (MTU selection)
+- [x] ESP32 S3 OTA mode
+- [x] camera web interface
+- [x] **Release v0.4.3**
+- [ ] ESP32 C5 support
+- [ ] ESP32 C5 5GHz wifi support
 - [ ] dualboot image for RPI
-- [ ] use smaller packets for less losses?
 - [ ] retransmissions ?
 - [ ] measure latency properly
 - [ ] study which components introduce latency
@@ -39,7 +47,9 @@ Open source digital FPV system based on esp32cam.
 - [ ] EIS
 - [ ] Android GS
 - [ ] Meta Quest 2 GS
-- [ ] lost frames inpainting ?
+- [ ] lost frames inpainting using neural network ?
+- [ ] JPEG artefacts removal using neural network?
+
 
 ## Features:
 - **esp32/esp32s3 + ov2640**: 640x360 30fps, 640x480 30fps, 800x456 30fps, 800x600 30fps, 1024x576 12fps
@@ -156,8 +166,8 @@ The **esp32cam** doesn’t have many free pins. You can optionally solder a **RE
 
 Both internal red LED and additional LED are used for indication:
  * solid - not recording
- * blinking 1Hz - recording
- * blinking 3Hz - OTA update mode.
+ * blinking 0.5Hz - recording
+ * blinking 1Hz - OTA update mode.
  
 **REC button** is used to start/stop air unit recording. Hold **REC button** on powerup to enter OTA (over the air update) mode.
 
@@ -181,9 +191,9 @@ Module comes with moderate flexible antenna which should be replaced with 2dBi d
 
 Internal yellow LED conflicts with SD card and thus can not be used for indication. External LED should be soldered to pin **D0** via 150 ... 680 Ohm resistor.
 
-Existing **Boot** button is used to start/stop air unit recording.
-
 A jumper should be soldered on **J3** to enable SD card usage (somehow it works without it, but is required for stable operation).
+
+Existing **Boot** button is used to start/stop air unit recording and enter OTA mode.
 
 ## Air Unit Variant 3: **Seed Studio XIAO ESP32 S3 Sense** + OV5640 + M12 120° lens (recommended)
 
@@ -421,6 +431,9 @@ Space                 | Exit application
 ESC                   | Close OSD menu or exit application
 d                     | Open Development UI
 
+# Camera web interface and OTA update
+
+OTA firmware update and recordings playback are available in camera web interface: [/doc/web_interface.md](/doc/web_interface.md)
 
 # Considerations
 
@@ -484,7 +497,7 @@ Both the **ESP32-CAM** and **ESP32-S3 Sense** come with narrow-angle lenses, whi
 
 A M12 120° wide-angle lens is recommended. The M8 wide-angle lenses on these modules are of poor quality, exhibiting high distortion, poor focus, chromatic aberration, and low light sensitivity.
 
-Be aware that some sensors have slightly different lens mount diameters. For example, the leftmost sensor is not compatible with the next two. I would recommend buying sensor with lens preinstalled rather replacing lens.
+Be aware that some sensors have slightly different lens mount diameters. For example, the rightmost sensor is not compatible with the next two. I would recommend buying sensor with lens preinstalled rather replacing lens.
 
 Also note: so called "night version" sensor lacks an IR filter and will display distorted colors in sunlight (buy correct lens with IR filter!).
 

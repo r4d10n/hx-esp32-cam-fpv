@@ -1,14 +1,30 @@
 
 # Making image file from SD card for release
-- Build image on PRI4 https://github.com/RomanLut/hx-esp32-cam-fpv/blob/master/doc/building_gs_image.md on **16GB** or **32BG** SD Card
+- use RPI2W with USB-LAN adapter to be able to ssh (pi/1234)
+
+- build image on PRI4 https://github.com/RomanLut/hx-esp32-cam-fpv/blob/master/doc/building_gs_image.md on **8GB** (recommended), **16GB** or **32BG** SD Card
  
-- Insert SD card into PRI 2W and compile rtl8812au driver.
+- insert SD card into PRI 2W and compile rtl8812au driver.
+
+- set default GS settings before doing next steps
 
 - * start ```sudo raspi-config``` and change the following options:
   * **Advanced options -> GL Driver -> Fake KMS**
   * **Advanced options -> Compositor -> disable compositor**
 
-- Insert SD card into PRI4 or PRI2W.
+- check that credentialsare not used:
+
+    ```cd ~/esp32-cam-fpv/```
+
+    ```git config --show-origin credential.helper``` should be empty.
+
+    ```git remote -v``` should not show credentials in url.
+
+- Delete GS recordings:
+
+    ```cd ~/esp32-cam-fpv/gs/```
+
+    ```rm *.avi``` 
 
 - Install modified pishrink.sh script and copy it to the ```/usr/local/bin``` folder by typing: 
 
@@ -34,7 +50,7 @@ _(note that it could be ```/dev/sdb1``` depending on USB port used)_
 
 - Create image from SD card to USB drive:
 
-```sudo dd if=/dev/mmcblk0 of=/mnt/usb1/espvrx.img bs=1M status=progress```
+```sudo dd if=/dev/mmcblk0 of=/mnt/usb1/espvrx_rpi.img bs=1M status=progress```
 
 ```sudo pishrink.sh -z -a /mnt/usb1/espvrx_rpi.img```
 

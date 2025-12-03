@@ -89,6 +89,8 @@ IRAM_ATTR void add_to_wlan_incoming_queue(const void* data, size_t size)
 
 //===========================================================================================
 //===========================================================================================
+//here comes packet starting from Packet_Header + user_data
+//size is sizeof(Packet_header) + sizeof(user_data)
 IRAM_ATTR bool add_to_wlan_outgoing_queue(const void* data, size_t size)
 {
     if (s_ground2air_config_packet.dataChannel.wifi_power == 0) return true;
@@ -147,6 +149,15 @@ inline bool init_queues(size_t wlan_incoming_queue_size, size_t wlan_outgoing_qu
   s_wlan_incoming_queue.init(new uint8_t[wlan_incoming_queue_size], wlan_incoming_queue_size);
 
   return true;
+}
+
+//===========================================================================================
+//===========================================================================================
+//free queues memory to give some space for fileserver and OTA
+void deinitQueues()
+{
+  free( s_wlan_outgoing_queue.getBuffer() );
+  delete[] s_wlan_incoming_queue.getBuffer();
 }
 
 //===========================================================================================
@@ -379,7 +390,6 @@ void setup_wifi(WIFI_Rate wifi_rate,uint8_t chn,float power_dbm,void (*packet_re
     setup_fec(s_ground2air_config_packet.dataChannel.fec_codec_k, s_ground2air_config_packet.dataChannel.fec_codec_n, s_ground2air_config_packet.dataChannel.fec_codec_mtu,
                 add_to_wlan_outgoing_queue,add_to_wlan_incoming_queue);
 
-
     //allocates 118-32 kb RAM!!!
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     //ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_ap_handler, NULL, NULL));
@@ -528,7 +538,7 @@ void setup_wifi_file_server(void)
 {
     esp_wifi_stop();
     ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    //ESP_ERROR_CHECK(esp_event_loop_create_default());  //loop is already initialized
     esp_netif_t *netif = esp_netif_create_default_wifi_ap();
 
     ESP_ERROR_CHECK(esp_netif_set_static_ip(netif));
