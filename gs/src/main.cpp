@@ -2881,7 +2881,7 @@ int main(int argc, const char* argv[])
             printf("-ch <wifi_channel>, default: 7\n");
             printf("-w <width>, default: 1280\n");
             printf("-h <width>, default: 720\n");
-            printf("-fullscreen <1/0>, default: 1\n");
+            printf("-fullscreen <1/0>, default: 0\n");
             printf("-vsync <1/0>, default: 1\n");
             printf("-sm <1/0>, skip setting monitor mode with pcap, default: 1\n");
 #ifdef USE_MAVLINK

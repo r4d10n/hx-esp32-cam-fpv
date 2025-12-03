@@ -75,8 +75,13 @@ struct PI_HAL::Impl
     uint32_t width = 1280;
     uint32_t height = 720;
 
-    bool fullscreen = true;
+    bool fullscreen = false;
     bool vsync = true;
+
+#ifdef USE_SDL
+    SDL_DisplayMode originalDisplayMode;
+    bool displayModeChanged = false;
+#endif
 
     std::mutex context_mutex;
 
@@ -309,6 +314,15 @@ bool PI_HAL::init_display_sdl()
 
     if (m_impl->fullscreen)
     {
+        // Save original display mode for restoration on exit
+        if (SDL_GetCurrentDisplayMode(0, &m_impl->originalDisplayMode) == 0)
+        {
+            printf("Original display mode: %dx%d @ %dHz\n",
+                   m_impl->originalDisplayMode.w,
+                   m_impl->originalDisplayMode.h,
+                   m_impl->originalDisplayMode.refresh_rate);
+        }
+
         int i = 0;
         for ( ; i < 3; i++)
         {
@@ -343,13 +357,14 @@ bool PI_HAL::init_display_sdl()
                     SDL_WINDOW_BORDERLESS );
                 m_impl->window = SDL_CreateWindow("esp32-cam-fpv", 0, 0, m_impl->width, m_impl->height, window_flags);
 
-                if (SDL_SetWindowDisplayMode(m_impl->window, &closestMode) != 0) 
+                if (SDL_SetWindowDisplayMode(m_impl->window, &closestMode) != 0)
                 {
                     printf("SDL_SetWindowDisplayMode Error: %s\n", SDL_GetError());
                     SDL_DestroyWindow(m_impl->window);
                     SDL_Quit();
                     return false;
                 }
+                m_impl->displayModeChanged = true;
                 break;
             }
             else
@@ -477,6 +492,22 @@ void PI_HAL::shutdown_display_dispmanx()
 void PI_HAL::shutdown_display_sdl()
 {
 #ifdef USE_SDL
+    // Restore original display mode if it was changed
+    if (m_impl->displayModeChanged)
+    {
+        // Exit fullscreen mode first
+        SDL_SetWindowFullscreen(m_impl->window, 0);
+
+        // Restore original display mode
+        if (SDL_SetWindowDisplayMode(m_impl->window, &m_impl->originalDisplayMode) == 0)
+        {
+            printf("Restored display mode: %dx%d @ %dHz\n",
+                   m_impl->originalDisplayMode.w,
+                   m_impl->originalDisplayMode.h,
+                   m_impl->originalDisplayMode.refresh_rate);
+        }
+    }
+
     SDL_GL_DeleteContext(m_impl->context);
     SDL_DestroyWindow(m_impl->window);
     SDL_Quit();
