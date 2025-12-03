@@ -15,26 +15,32 @@ Protocol structure:
 
 Features:
 - FEC decoding support using zfec library (can recover from up to 50% packet loss)
-- Supports both pcapng file input and live capture
+- Live frame display using OpenCV
+- Video recording to file (AVI/MP4)
+- Optional frame saving to disk
 
 Usage:
-    # From pcapng file:
-    python esp32_fpv_capture.py --input capture.pcapng --output frames/
+    # Live capture with display:
+    sudo python esp32_fpv_capture.py -I wlan0mon --fec --display
 
-    # Live capture (requires root and monitor mode interface):
-    python esp32_fpv_capture.py --interface wlan0mon --output frames/
+    # Live capture and save video:
+    sudo python esp32_fpv_capture.py -I wlan0mon --fec --display --video output.avi
 
-    # Enable FEC decoding (requires: pip install zfec):
-    python esp32_fpv_capture.py --input capture.pcapng --output frames/ --fec
+    # Extract frames from pcapng:
+    python esp32_fpv_capture.py -i capture.pcapng -o frames/ --fec
+
+    # Display only (no frame saving):
+    sudo python esp32_fpv_capture.py -I wlan0mon --fec --display --no-save
 """
 
 import argparse
 import os
 import struct
 import sys
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Callable
 
 try:
     import dpkt
@@ -50,6 +56,15 @@ try:
 except ImportError:
     pass
 
+# Try to import OpenCV for display and video
+HAS_CV2 = False
+try:
+    import cv2
+    import numpy as np
+    HAS_CV2 = True
+except ImportError:
+    pass
+
 # Try to import pcap for live capture (more reliable than scapy for monitor mode)
 HAS_PCAP = False
 try:
@@ -62,27 +77,23 @@ except ImportError:
 HAS_SCAPY = False
 try:
     from scapy.all import sniff, conf
-    # Disable scapy's verbose output
     conf.verb = 0
     HAS_SCAPY = True
 except (ImportError, Exception):
-    # Scapy may fail to import due to cryptography/cffi issues
     pass
 
 # Protocol constants
 PACKET_SIGNATURE = 0x38  # 56 decimal
-PACKET_VERSION = 3       # Current version in captures (was 2 in older code)
-DEFAULT_FEC_K = 6        # Default number of primary data packets per FEC block
-DEFAULT_FEC_N = 12       # Default total packets per FEC block (K primary + N-K parity)
+PACKET_VERSION = 3
+DEFAULT_FEC_K = 6
+DEFAULT_FEC_N = 12
 
-# Packet type enumeration
 class PacketType:
     VIDEO = 0
     TELEMETRY = 1
     OSD = 2
     CONFIG = 3
 
-# Resolution enumeration
 RESOLUTIONS = {
     0: (320, 240),    # QVGA
     1: (400, 296),    # CIF
@@ -112,32 +123,21 @@ class FECHeader:
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Optional['FECHeader']:
-        """Parse FEC header from raw bytes"""
         if len(data) < 12:
             return None
-
         version = data[0]
         signature = data[1]
-
         if signature != PACKET_SIGNATURE:
             return None
-
         from_device_id = struct.unpack('<H', data[2:4])[0]
         to_device_id = struct.unpack('<H', data[4:6])[0]
         size = struct.unpack('<H', data[6:8])[0]
         block_pkt = struct.unpack('<I', data[8:12])[0]
         block_index = block_pkt & 0xFFFFFF
         packet_index = (block_pkt >> 24) & 0xFF
-
-        return cls(
-            version=version,
-            signature=signature,
-            from_device_id=from_device_id,
-            to_device_id=to_device_id,
-            size=size,
-            block_index=block_index,
-            packet_index=packet_index
-        )
+        return cls(version=version, signature=signature,
+                   from_device_id=from_device_id, to_device_id=to_device_id,
+                   size=size, block_index=block_index, packet_index=packet_index)
 
 
 @dataclass
@@ -157,10 +157,8 @@ class VideoPacketHeader:
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Optional['VideoPacketHeader']:
-        """Parse video packet header from raw bytes"""
         if len(data) < 18:
             return None
-
         packet_type = data[0]
         size = struct.unpack('<I', data[1:5])[0]
         pong = data[5]
@@ -173,20 +171,10 @@ class VideoPacketHeader:
         part_index = part_last & 0x7F
         last_part = bool((part_last >> 7) & 0x1)
         frame_index = struct.unpack('<I', data[14:18])[0]
-
-        return cls(
-            packet_type=packet_type,
-            size=size,
-            pong=pong,
-            version=version,
-            crc=crc,
-            air_device_id=air_device_id,
-            gs_device_id=gs_device_id,
-            resolution=resolution,
-            part_index=part_index,
-            last_part=last_part,
-            frame_index=frame_index
-        )
+        return cls(packet_type=packet_type, size=size, pong=pong, version=version,
+                   crc=crc, air_device_id=air_device_id, gs_device_id=gs_device_id,
+                   resolution=resolution, part_index=part_index, last_part=last_part,
+                   frame_index=frame_index)
 
 
 @dataclass
@@ -201,8 +189,84 @@ class VideoPart:
 class FECBlock:
     """Holds packets for a single FEC block"""
     block_index: int
-    packets: Dict[int, bytes] = field(default_factory=dict)  # packet_index -> payload data
-    payload_size: int = 0  # Size of payloads in this block
+    packets: Dict[int, bytes] = field(default_factory=dict)
+    payload_size: int = 0
+
+
+class FrameDisplay:
+    """Handles live frame display and video recording"""
+
+    def __init__(self, window_name: str = "ESP32-CAM FPV",
+                 video_output: str = None, fps: float = 30.0):
+        self.window_name = window_name
+        self.video_output = video_output
+        self.fps = fps
+        self.video_writer = None
+        self.frame_size = None
+        self.last_frame_time = 0
+        self.frame_count = 0
+        self.start_time = time.time()
+
+        if HAS_CV2:
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+
+    def display_frame(self, jpeg_data: bytes) -> bool:
+        """Display a JPEG frame. Returns False if window closed."""
+        if not HAS_CV2:
+            return True
+
+        try:
+            # Decode JPEG
+            nparr = np.frombuffer(jpeg_data, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+            if frame is None:
+                return True
+
+            # Initialize video writer if needed
+            if self.video_output and self.video_writer is None:
+                h, w = frame.shape[:2]
+                self.frame_size = (w, h)
+                fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+                if self.video_output.endswith('.mp4'):
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                self.video_writer = cv2.VideoWriter(
+                    self.video_output, fourcc, self.fps, self.frame_size)
+
+            # Write to video file
+            if self.video_writer:
+                self.video_writer.write(frame)
+
+            # Calculate FPS
+            self.frame_count += 1
+            elapsed = time.time() - self.start_time
+            current_fps = self.frame_count / elapsed if elapsed > 0 else 0
+
+            # Add FPS overlay
+            cv2.putText(frame, f"FPS: {current_fps:.1f}", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+            # Display frame
+            cv2.imshow(self.window_name, frame)
+
+            # Check for key press (q to quit)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q') or key == 27:  # q or ESC
+                return False
+
+            return True
+
+        except Exception as e:
+            print(f"Display error: {e}")
+            return True
+
+    def close(self):
+        """Clean up resources"""
+        if self.video_writer:
+            self.video_writer.release()
+            print(f"Video saved to: {self.video_output}")
+        if HAS_CV2:
+            cv2.destroyAllWindows()
 
 
 class FECDecoder:
@@ -219,96 +283,59 @@ class FECDecoder:
             'blocks_recovered': 0,
             'blocks_failed': 0,
         }
-
         if HAS_ZFEC:
             self.decoder = zfec.Decoder(k, n)
 
     def add_packet(self, block_index: int, packet_index: int, payload: bytes) -> Optional[List[bytes]]:
-        """
-        Add a packet to its FEC block.
-        Returns list of decoded primary payloads if block can be decoded, None otherwise.
-        """
-        # Get or create block
         if block_index not in self.blocks:
             self.blocks[block_index] = FECBlock(block_index=block_index)
-
         block = self.blocks[block_index]
-
-        # Skip duplicate packets
         if packet_index in block.packets:
             return None
-
-        # Store packet
         block.packets[packet_index] = payload
         if block.payload_size == 0:
             block.payload_size = len(payload)
-
-        # Check if we can decode
         if len(block.packets) >= self.k:
             result = self._try_decode_block(block)
             if result is not None:
-                # Clean up old blocks
                 self._cleanup_old_blocks(block_index)
             return result
-
         return None
 
     def _try_decode_block(self, block: FECBlock) -> Optional[List[bytes]]:
-        """Try to decode a block, returns list of K primary payloads or None"""
-        # Count primary packets we have
         primary_packets = {idx: data for idx, data in block.packets.items() if idx < self.k}
-
-        # If we have all primary packets, no decoding needed
         if len(primary_packets) == self.k:
             self.stats['blocks_complete'] += 1
-            result = [primary_packets[i] for i in range(self.k)]
-            return result
-
-        # Need FEC decoding
+            return [primary_packets[i] for i in range(self.k)]
         if not HAS_ZFEC or self.decoder is None:
             self.stats['blocks_failed'] += 1
             return None
-
-        # Collect K packets (mix of primary and FEC)
         available = sorted(block.packets.keys())[:self.k]
-
         if len(available) < self.k:
             return None
-
         try:
-            # Prepare data for zfec decoder
-            # zfec.Decoder.decode expects (shares, sharenums) where shares are padded to same length
             shares = []
             sharenums = []
-
-            # Ensure all packets are same size (pad if needed)
             max_size = max(len(block.packets[idx]) for idx in available)
-
             for idx in available:
                 data = block.packets[idx]
                 if len(data) < max_size:
                     data = data + b'\x00' * (max_size - len(data))
                 shares.append(data)
                 sharenums.append(idx)
-
-            # Decode
             decoded = self.decoder.decode(shares, sharenums)
-
             self.stats['blocks_recovered'] += 1
             if self.verbose:
                 missing = [i for i in range(self.k) if i not in primary_packets]
-                print(f"Block {block.block_index}: Recovered packets {missing} using FEC")
-
+                print(f"Block {block.block_index}: Recovered {missing}")
             return list(decoded)
-
         except Exception as e:
             if self.verbose:
-                print(f"Block {block.block_index}: FEC decode failed: {e}")
+                print(f"Block {block.block_index}: FEC failed: {e}")
             self.stats['blocks_failed'] += 1
             return None
 
     def _cleanup_old_blocks(self, current_block: int):
-        """Remove blocks that are too old"""
         old_blocks = [idx for idx in self.blocks.keys() if idx < current_block - 100]
         for idx in old_blocks:
             if len(self.blocks[idx].packets) < self.k:
@@ -316,7 +343,6 @@ class FECDecoder:
             del self.blocks[idx]
 
     def finalize(self):
-        """Clean up remaining blocks"""
         for block in self.blocks.values():
             if len(block.packets) < self.k:
                 self.stats['blocks_failed'] += 1
@@ -325,10 +351,14 @@ class FECDecoder:
 class FrameAssembler:
     """Assembles complete JPEG frames from video packet parts"""
 
-    def __init__(self, output_dir: str, fec_k: int = DEFAULT_FEC_K, verbose: bool = False):
+    def __init__(self, output_dir: str = None, fec_k: int = DEFAULT_FEC_K,
+                 verbose: bool = False, save_frames: bool = True,
+                 on_frame_complete: Callable[[bytes, int], None] = None):
         self.output_dir = output_dir
         self.fec_k = fec_k
         self.verbose = verbose
+        self.save_frames = save_frames
+        self.on_frame_complete = on_frame_complete
         self.frames: Dict[int, Dict[int, VideoPart]] = defaultdict(dict)
         self.completed_frames: set = set()
         self.frame_count = 0
@@ -339,90 +369,64 @@ class FrameAssembler:
             'frames_saved': 0,
             'frames_incomplete': 0,
         }
-
-        os.makedirs(output_dir, exist_ok=True)
+        if output_dir and save_frames:
+            os.makedirs(output_dir, exist_ok=True)
 
     def add_part(self, frame_index: int, part: VideoPart) -> Optional[str]:
-        """
-        Add a video part to the frame buffer.
-        Returns the saved filename if frame is complete, None otherwise.
-        """
         if frame_index in self.completed_frames:
             return None
-
         self.frames[frame_index][part.part_index] = part
-
-        # Check if frame is complete
         if part.last_part:
             return self._try_assemble_frame(frame_index, part.part_index)
-
         return None
 
     def _try_assemble_frame(self, frame_index: int, last_part_index: int) -> Optional[str]:
-        """Try to assemble a complete frame"""
         parts = self.frames[frame_index]
-
-        # Check if we have all parts from 0 to last_part_index
-        missing_parts = []
-        for i in range(last_part_index + 1):
-            if i not in parts:
-                missing_parts.append(i)
-
+        missing_parts = [i for i in range(last_part_index + 1) if i not in parts]
         if missing_parts:
             if self.verbose:
-                print(f"Frame {frame_index}: Missing parts {missing_parts}")
+                print(f"Frame {frame_index}: Missing {missing_parts}")
             self.stats['frames_incomplete'] += 1
-            # Don't delete yet - might get missing parts later
             return None
 
-        # Assemble the frame
-        jpeg_data = b''
-        for i in range(last_part_index + 1):
-            jpeg_data += parts[i].data
+        jpeg_data = b''.join(parts[i].data for i in range(last_part_index + 1))
 
-        # Validate JPEG (should start with FFD8 and end with FFD9)
-        if len(jpeg_data) < 4:
+        if len(jpeg_data) < 4 or jpeg_data[:2] != b'\xff\xd8':
             if self.verbose:
-                print(f"Frame {frame_index}: Too small ({len(jpeg_data)} bytes)")
+                print(f"Frame {frame_index}: Invalid JPEG")
             return None
 
-        if jpeg_data[:2] != b'\xff\xd8':
+        # Call frame complete callback (for display)
+        if self.on_frame_complete:
+            self.on_frame_complete(jpeg_data, frame_index)
+
+        # Save frame to disk
+        filename = None
+        if self.save_frames and self.output_dir:
+            filename = os.path.join(self.output_dir, f"frame_{frame_index:08d}.jpg")
+            with open(filename, 'wb') as f:
+                f.write(jpeg_data)
             if self.verbose:
-                print(f"Frame {frame_index}: Invalid JPEG header: {jpeg_data[:4].hex()}")
-            return None
-
-        # Save the frame
-        filename = os.path.join(self.output_dir, f"frame_{frame_index:08d}.jpg")
-        with open(filename, 'wb') as f:
-            f.write(jpeg_data)
+                print(f"Saved {filename} ({len(jpeg_data)} bytes)")
 
         self.completed_frames.add(frame_index)
         self.stats['frames_saved'] += 1
         self.frame_count += 1
-
-        # Clean up
         del self.frames[frame_index]
-
-        if self.verbose:
-            print(f"Saved {filename} ({len(jpeg_data)} bytes, {last_part_index + 1} parts)")
-
         return filename
 
     def finalize(self) -> None:
-        """Clean up any remaining incomplete frames"""
         for frame_index in list(self.frames.keys()):
             if self.verbose:
                 parts = self.frames[frame_index]
-                print(f"Frame {frame_index}: Incomplete, had parts {sorted(parts.keys())}")
+                print(f"Frame {frame_index}: Incomplete, had {sorted(parts.keys())}")
             self.stats['frames_incomplete'] += 1
         self.frames.clear()
 
 
 def find_fec_header(data: bytes, start: int = 0, end: int = None) -> int:
-    """Find the offset of FEC header in raw packet data"""
     if end is None:
         end = min(len(data), 150)
-
     for pos in range(start, end - 1):
         if data[pos + 1] == PACKET_SIGNATURE:
             return pos
@@ -430,121 +434,73 @@ def find_fec_header(data: bytes, start: int = 0, end: int = None) -> int:
 
 
 def extract_video_part(payload: bytes) -> Optional[Tuple[VideoPart, int]]:
-    """Extract video part from FEC payload, returns (VideoPart, frame_index) or None"""
     if len(payload) < 18:
         return None
-
     video_header = VideoPacketHeader.from_bytes(payload[:18])
-    if video_header is None:
+    if video_header is None or video_header.packet_type != PacketType.VIDEO:
         return None
-
-    # Only process video packets
-    if video_header.packet_type != PacketType.VIDEO:
-        return None
-
     jpeg_data = payload[18:]
     if len(jpeg_data) == 0:
         return None
-
-    part = VideoPart(
-        part_index=video_header.part_index,
-        last_part=video_header.last_part,
-        data=jpeg_data
-    )
-
+    part = VideoPart(part_index=video_header.part_index,
+                     last_part=video_header.last_part, data=jpeg_data)
     return (part, video_header.frame_index)
 
 
 def process_packet_with_fec(raw_data: bytes, fec_decoder: FECDecoder,
                             assembler: FrameAssembler) -> bool:
-    """Process packet with FEC decoding support"""
-    # Find FEC header
     fec_offset = find_fec_header(raw_data, start=40, end=100)
     if fec_offset < 0:
         return False
-
-    # Parse FEC header
     fec_header = FECHeader.from_bytes(raw_data[fec_offset:fec_offset + 12])
     if fec_header is None:
         return False
-
     assembler.stats['packets_processed'] += 1
-
     if fec_header.packet_index < fec_decoder.k:
         assembler.stats['primary_packets'] += 1
     else:
         assembler.stats['fec_packets'] += 1
-
-    # Extract payload (everything after FEC header)
     payload_start = fec_offset + 12
-    payload_end = fec_offset + 12 + fec_header.size
-    if payload_end > len(raw_data):
-        payload_end = len(raw_data)
-
+    payload_end = min(fec_offset + 12 + fec_header.size, len(raw_data))
     payload = raw_data[payload_start:payload_end]
-
-    # Add to FEC decoder
     decoded_payloads = fec_decoder.add_packet(
-        fec_header.block_index,
-        fec_header.packet_index,
-        payload
-    )
-
-    # If block was decoded, process all primary payloads
+        fec_header.block_index, fec_header.packet_index, payload)
     if decoded_payloads:
-        for payload in decoded_payloads:
-            result = extract_video_part(payload)
+        for p in decoded_payloads:
+            result = extract_video_part(p)
             if result:
                 part, frame_index = result
                 assembler.add_part(frame_index, part)
-
     return True
 
 
 def process_packet_simple(raw_data: bytes, assembler: FrameAssembler) -> bool:
-    """Process packet without FEC decoding (simple mode)"""
-    # Find FEC header
     fec_offset = find_fec_header(raw_data, start=40, end=100)
     if fec_offset < 0:
         return False
-
-    # Parse FEC header
     fec_header = FECHeader.from_bytes(raw_data[fec_offset:fec_offset + 12])
     if fec_header is None:
         return False
-
     assembler.stats['packets_processed'] += 1
-
-    # Skip FEC parity packets (only process primary data packets)
     if fec_header.packet_index >= assembler.fec_k:
         assembler.stats['fec_packets'] += 1
         return True
-
     assembler.stats['primary_packets'] += 1
-
-    # Extract payload
     payload_start = fec_offset + 12
-    payload_end = fec_offset + 12 + fec_header.size
-    if payload_end > len(raw_data):
-        payload_end = len(raw_data)
-
+    payload_end = min(fec_offset + 12 + fec_header.size, len(raw_data))
     payload = raw_data[payload_start:payload_end]
-
-    # Extract video part
     result = extract_video_part(payload)
     if result:
         part, frame_index = result
         assembler.add_part(frame_index, part)
-
     return True
 
 
 def process_pcapng_file(input_file: str, assembler: FrameAssembler,
-                        fec_decoder: Optional[FECDecoder] = None) -> None:
-    """Process packets from a pcapng file"""
+                        fec_decoder: Optional[FECDecoder] = None,
+                        display: Optional[FrameDisplay] = None) -> None:
     if not HAS_DPKT:
-        print("Error: dpkt library is required for pcapng file processing")
-        print("Install with: pip install dpkt")
+        print("Error: dpkt required. Install: pip install dpkt")
         sys.exit(1)
 
     print(f"Reading {input_file}...")
@@ -555,7 +511,6 @@ def process_pcapng_file(input_file: str, assembler: FrameAssembler,
         try:
             pcap_reader = dpkt.pcapng.Reader(f)
         except ValueError:
-            # Try as regular pcap
             f.seek(0)
             pcap_reader = dpkt.pcap.Reader(f)
 
@@ -568,27 +523,50 @@ def process_pcapng_file(input_file: str, assembler: FrameAssembler,
             packet_count += 1
 
             if packet_count % 1000 == 0:
-                print(f"Processed {packet_count} packets, {assembler.stats['frames_saved']} frames saved...")
+                print(f"Processed {packet_count} packets, {assembler.stats['frames_saved']} frames...")
+
+            # Check for quit
+            if display and not display.display_frame(b''):
+                break
 
     print(f"Finished processing {packet_count} packets")
 
 
-def process_live_capture_pcap(interface: str, assembler: FrameAssembler,
-                              fec_decoder: Optional[FECDecoder] = None,
-                              count: int = 0, timeout: int = None) -> None:
-    """Capture using pypcap library (preferred for monitor mode)"""
-    print(f"Starting live capture on {interface} using pcap...")
+def process_live_capture(interface: str, assembler: FrameAssembler,
+                        fec_decoder: Optional[FECDecoder] = None,
+                        display: Optional[FrameDisplay] = None,
+                        count: int = 0, timeout: int = None) -> None:
+    if HAS_PCAP:
+        _capture_with_pcap(interface, assembler, fec_decoder, display, count, timeout)
+    elif HAS_SCAPY:
+        _capture_with_scapy(interface, assembler, fec_decoder, display, count, timeout)
+    else:
+        print("Error: No capture library. Install: pip install pypcap")
+        sys.exit(1)
+
+
+def _capture_with_pcap(interface: str, assembler: FrameAssembler,
+                       fec_decoder: Optional[FECDecoder],
+                       display: Optional[FrameDisplay],
+                       count: int, timeout: int) -> None:
+    print(f"Starting capture on {interface} using pcap...")
     if fec_decoder:
         print("FEC decoding enabled")
+    if display:
+        print("Live display enabled (press 'q' to quit)")
     print("Press Ctrl+C to stop")
 
     try:
         pc = pcap.pcap(name=interface, promisc=True, immediate=True,
                        timeout_ms=1000 if timeout else 0)
-
         packet_count = 0
+        running = True
+
         try:
             for ts, buf in pc:
+                if not running:
+                    break
+
                 if fec_decoder:
                     process_packet_with_fec(buf, fec_decoder, assembler)
                 else:
@@ -596,32 +574,42 @@ def process_live_capture_pcap(interface: str, assembler: FrameAssembler,
                 packet_count += 1
 
                 if packet_count % 100 == 0:
-                    print(f"Captured {packet_count} packets, {assembler.stats['frames_saved']} frames...")
+                    print(f"\rCaptured {packet_count} pkts, {assembler.stats['frames_saved']} frames", end='', flush=True)
 
                 if count > 0 and packet_count >= count:
                     break
-        except KeyboardInterrupt:
-            print("\nCapture stopped by user")
 
-        print(f"Captured {packet_count} packets total")
+                # Process display events
+                if display and HAS_CV2:
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord('q') or key == 27:
+                        running = False
+
+        except KeyboardInterrupt:
+            print("\nCapture stopped")
+
+        print(f"\nCaptured {packet_count} packets total")
 
     except Exception as e:
-        print(f"Error during pcap capture: {e}")
+        print(f"Capture error: {e}")
         sys.exit(1)
 
 
-def process_live_capture_scapy(interface: str, assembler: FrameAssembler,
-                               fec_decoder: Optional[FECDecoder] = None,
-                               count: int = 0, timeout: int = None) -> None:
-    """Capture using scapy library (fallback)"""
-    print(f"Starting live capture on {interface} using scapy...")
+def _capture_with_scapy(interface: str, assembler: FrameAssembler,
+                        fec_decoder: Optional[FECDecoder],
+                        display: Optional[FrameDisplay],
+                        count: int, timeout: int) -> None:
+    print(f"Starting capture on {interface} using scapy...")
     if fec_decoder:
         print("FEC decoding enabled")
     print("Press Ctrl+C to stop")
 
     packet_count = [0]
+    running = [True]
 
     def packet_handler(pkt):
+        if not running[0]:
+            return
         try:
             raw_data = bytes(pkt)
             if fec_decoder:
@@ -631,43 +619,28 @@ def process_live_capture_scapy(interface: str, assembler: FrameAssembler,
             packet_count[0] += 1
 
             if packet_count[0] % 100 == 0:
-                print(f"Captured {packet_count[0]} packets, {assembler.stats['frames_saved']} frames...")
+                print(f"\rCaptured {packet_count[0]} pkts, {assembler.stats['frames_saved']} frames", end='', flush=True)
+
+            if display and HAS_CV2:
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q') or key == 27:
+                    running[0] = False
+
         except Exception as e:
             if assembler.verbose:
-                print(f"Error processing packet: {e}")
+                print(f"Error: {e}")
 
     try:
         sniff(iface=interface, prn=packet_handler,
               count=count if count > 0 else 0,
-              timeout=timeout, store=False,
-              monitor=True)
+              timeout=timeout, store=False, monitor=True)
     except KeyboardInterrupt:
-        print("\nCapture stopped by user")
-    except PermissionError:
-        print("Error: Root privileges required for live capture")
-        sys.exit(1)
+        print("\nCapture stopped")
     except Exception as e:
-        print(f"Error during scapy capture: {e}")
-        print("Try using pypcap instead: pip install pypcap")
+        print(f"Capture error: {e}")
         sys.exit(1)
 
-    print(f"Captured {packet_count[0]} packets total")
-
-
-def process_live_capture(interface: str, assembler: FrameAssembler,
-                        fec_decoder: Optional[FECDecoder] = None,
-                        count: int = 0, timeout: int = None) -> None:
-    """Capture and process live packets from monitor mode interface"""
-    if HAS_PCAP:
-        process_live_capture_pcap(interface, assembler, fec_decoder, count, timeout)
-    elif HAS_SCAPY:
-        process_live_capture_scapy(interface, assembler, fec_decoder, count, timeout)
-    else:
-        print("Error: No packet capture library available for live capture")
-        print("Install one of:")
-        print("  pip install pypcap   (recommended for monitor mode)")
-        print("  pip install scapy    (fallback)")
-        sys.exit(1)
+    print(f"\nCaptured {packet_count[0]} packets total")
 
 
 def main():
@@ -676,23 +649,26 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Extract frames from pcapng file (simple mode, no FEC):
-    python esp32_fpv_capture.py -i capture.pcapng -o frames/
+    # Live capture with display:
+    sudo python esp32_fpv_capture.py -I wlan0mon --fec --display
 
-    # Extract with FEC decoding (recovers lost packets):
+    # Live capture, display, and record video:
+    sudo python esp32_fpv_capture.py -I wlan0mon --fec --display --video output.avi
+
+    # Display only, no frame saving:
+    sudo python esp32_fpv_capture.py -I wlan0mon --fec --display --no-save
+
+    # Extract frames from pcapng file:
     python esp32_fpv_capture.py -i capture.pcapng -o frames/ --fec
 
-    # Live capture from monitor mode interface:
-    sudo python esp32_fpv_capture.py -I wlan0mon -o frames/ --fec
-
-    # Extract with verbose output:
-    python esp32_fpv_capture.py -i capture.pcapng -o frames/ -v --fec
+    # Playback pcapng with display:
+    python esp32_fpv_capture.py -i capture.pcapng --fec --display
 
 Dependencies:
-    pip install dpkt        # Required for pcapng file reading
-    pip install zfec        # Required for --fec (FEC decoding)
-    pip install pypcap      # Recommended for live capture
-    pip install scapy       # Fallback for live capture
+    pip install dpkt         # pcapng file reading
+    pip install zfec         # FEC decoding (--fec)
+    pip install opencv-python # Display and video (--display, --video)
+    pip install pypcap       # Live capture
         """
     )
 
@@ -700,52 +676,90 @@ Dependencies:
     input_group.add_argument('-i', '--input', metavar='FILE',
                             help='Input pcapng/pcap file')
     input_group.add_argument('-I', '--interface', metavar='IFACE',
-                            help='Network interface in monitor mode for live capture')
+                            help='Network interface in monitor mode')
 
     parser.add_argument('-o', '--output', metavar='DIR', default='frames',
-                        help='Output directory for extracted frames (default: frames)')
+                        help='Output directory for frames (default: frames)')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Verbose output')
     parser.add_argument('-c', '--count', type=int, default=0,
-                        help='Number of packets to capture (0 = unlimited, live capture only)')
+                        help='Packet count limit (0 = unlimited)')
     parser.add_argument('-t', '--timeout', type=int, default=None,
-                        help='Capture timeout in seconds (live capture only)')
-    parser.add_argument('-k', '--fec-k', type=int, default=DEFAULT_FEC_K,
-                        help=f'FEC K value - number of primary data packets (default: {DEFAULT_FEC_K})')
-    parser.add_argument('-n', '--fec-n', type=int, default=DEFAULT_FEC_N,
-                        help=f'FEC N value - total packets per block (default: {DEFAULT_FEC_N})')
+                        help='Capture timeout in seconds')
+
+    # FEC options
     parser.add_argument('--fec', action='store_true',
-                        help='Enable FEC decoding (requires zfec library)')
+                        help='Enable FEC decoding (requires zfec)')
+    parser.add_argument('-k', '--fec-k', type=int, default=DEFAULT_FEC_K,
+                        help=f'FEC K value (default: {DEFAULT_FEC_K})')
+    parser.add_argument('-n', '--fec-n', type=int, default=DEFAULT_FEC_N,
+                        help=f'FEC N value (default: {DEFAULT_FEC_N})')
+
+    # Display and video options
+    parser.add_argument('--display', '-d', action='store_true',
+                        help='Show live frame display (requires opencv)')
+    parser.add_argument('--video', metavar='FILE',
+                        help='Save video to file (e.g., output.avi)')
+    parser.add_argument('--fps', type=float, default=30.0,
+                        help='Video FPS for recording (default: 30)')
+    parser.add_argument('--no-save', action='store_true',
+                        help='Do not save individual frames to disk')
 
     args = parser.parse_args()
 
-    # Check for FEC support
+    # Check dependencies
+    if args.fec and not HAS_ZFEC:
+        print("Error: zfec required for --fec. Install: pip install zfec")
+        sys.exit(1)
+
+    if (args.display or args.video) and not HAS_CV2:
+        print("Error: opencv required for --display/--video. Install: pip install opencv-python")
+        sys.exit(1)
+
+    # Setup FEC decoder
     fec_decoder = None
     if args.fec:
-        if not HAS_ZFEC:
-            print("Error: zfec library required for FEC decoding")
-            print("Install with: pip install zfec")
-            sys.exit(1)
         fec_decoder = FECDecoder(k=args.fec_k, n=args.fec_n, verbose=args.verbose)
 
-    # Create frame assembler
-    assembler = FrameAssembler(args.output, fec_k=args.fec_k, verbose=args.verbose)
+    # Setup display
+    display = None
+    if args.display or args.video:
+        display = FrameDisplay(video_output=args.video, fps=args.fps)
+
+    # Setup frame assembler
+    save_frames = not args.no_save
+    output_dir = args.output if save_frames else None
+
+    def on_frame_complete(jpeg_data: bytes, frame_index: int):
+        if display:
+            display.display_frame(jpeg_data)
+
+    assembler = FrameAssembler(
+        output_dir=output_dir,
+        fec_k=args.fec_k,
+        verbose=args.verbose,
+        save_frames=save_frames,
+        on_frame_complete=on_frame_complete if display else None
+    )
 
     try:
         if args.input:
             if not os.path.exists(args.input):
-                print(f"Error: Input file '{args.input}' not found")
+                print(f"Error: File not found: {args.input}")
                 sys.exit(1)
-            process_pcapng_file(args.input, assembler, fec_decoder)
+            process_pcapng_file(args.input, assembler, fec_decoder, display)
         else:
-            process_live_capture(args.interface, assembler, fec_decoder,
+            process_live_capture(args.interface, assembler, fec_decoder, display,
                                count=args.count, timeout=args.timeout)
     finally:
-        # Finalize
+        # Cleanup
         if fec_decoder:
             fec_decoder.finalize()
         assembler.finalize()
+        if display:
+            display.close()
 
+        # Print statistics
         print("\n=== Statistics ===")
         print(f"Packets processed: {assembler.stats['packets_processed']}")
         print(f"  Primary packets: {assembler.stats['primary_packets']}")
@@ -754,9 +768,10 @@ Dependencies:
             print(f"FEC blocks complete:  {fec_decoder.stats['blocks_complete']}")
             print(f"FEC blocks recovered: {fec_decoder.stats['blocks_recovered']}")
             print(f"FEC blocks failed:    {fec_decoder.stats['blocks_failed']}")
-        print(f"Frames saved:      {assembler.stats['frames_saved']}")
+        print(f"Frames decoded:    {assembler.stats['frames_saved']}")
         print(f"Frames incomplete: {assembler.stats['frames_incomplete']}")
-        print(f"\nOutput directory: {os.path.abspath(args.output)}")
+        if save_frames and output_dir:
+            print(f"Output directory:  {os.path.abspath(output_dir)}")
 
 
 if __name__ == '__main__':
