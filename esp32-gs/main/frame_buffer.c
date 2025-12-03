@@ -52,11 +52,24 @@ esp_err_t frame_buffer_init(void)
         return ESP_ERR_NO_MEM;
     }
 
+    // Check available memory
+    size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    ESP_LOGI(TAG, "Free memory: PSRAM=%u, Internal=%u",
+             (unsigned)free_psram, (unsigned)free_internal);
+
+    bool using_psram = false;
+
     // Allocate frame buffers
     // Try PSRAM first, fall back to internal RAM
     for (int i = 0; i < FRAME_BUFFER_COUNT; i++) {
-        s_frames[i].data = heap_caps_malloc(MAX_FRAME_SIZE,
-            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (free_psram >= MAX_FRAME_SIZE) {
+            s_frames[i].data = heap_caps_malloc(MAX_FRAME_SIZE,
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (s_frames[i].data != NULL) {
+                using_psram = true;
+            }
+        }
 
         if (s_frames[i].data == NULL) {
             // Fall back to internal RAM
@@ -84,8 +97,10 @@ esp_err_t frame_buffer_init(void)
     }
 
     // Allocate assembly buffer
-    s_assembly.data = heap_caps_malloc(MAX_FRAME_SIZE,
-        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (free_psram >= MAX_FRAME_SIZE) {
+        s_assembly.data = heap_caps_malloc(MAX_FRAME_SIZE,
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
     if (s_assembly.data == NULL) {
         s_assembly.data = heap_caps_malloc(MAX_FRAME_SIZE,
             MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -95,8 +110,9 @@ esp_err_t frame_buffer_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "Frame buffer initialized: %d buffers x %d bytes",
-             FRAME_BUFFER_COUNT, MAX_FRAME_SIZE);
+    ESP_LOGI(TAG, "Frame buffer initialized: %d buffers x %d bytes (%s RAM)",
+             FRAME_BUFFER_COUNT, MAX_FRAME_SIZE,
+             using_psram ? "PSRAM" : "internal");
 
     return ESP_OK;
 }

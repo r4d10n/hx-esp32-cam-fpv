@@ -24,7 +24,7 @@ esp_err_t packet_rx_init(void);
  * @param len Packet length
  * @param rssi Signal strength in dBm
  */
-void IRAM_ATTR packet_rx_handle(const uint8_t *data, size_t len, int8_t rssi);
+void packet_rx_handle(const uint8_t *data, size_t len, int8_t rssi);
 
 /**
  * Start packet processing task
