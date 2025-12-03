@@ -82,7 +82,8 @@ void IRAM_ATTR packet_rx_handle(const uint8_t *data, size_t len, int8_t rssi)
     // Quick signature check before queuing
     // Look for FPV signature in expected range (after 802.11 header)
     bool found_sig = false;
-    for (int i = 24; i < 60 && i < len - 1; i++) {
+    size_t search_end = (len > 60) ? 60 : len;
+    for (size_t i = 24; i + 1 < search_end; i++) {
         if (data[i + 1] == FPV_PACKET_SIGNATURE) {
             found_sig = true;
             break;
@@ -165,6 +166,7 @@ int8_t packet_rx_get_rssi(void)
 // Packet processing task
 static void packet_process_task(void *arg)
 {
+    (void)arg;  // Unused
     packet_item_t item;
 
     ESP_LOGI(TAG, "Packet processing task started");
@@ -189,9 +191,10 @@ static void packet_process_task(void *arg)
 static int find_fec_header(const uint8_t *data, size_t len)
 {
     // Search in expected range (after 802.11 header, before payload)
-    for (int i = 24; i < 100 && i < len - 1; i++) {
+    size_t search_end = (len > 100) ? 100 : len;
+    for (size_t i = 24; i + 1 < search_end; i++) {
         if (data[i + 1] == FPV_PACKET_SIGNATURE) {
-            return i;
+            return (int)i;
         }
     }
     return -1;
@@ -207,7 +210,7 @@ static bool process_fpv_packet(const uint8_t *data, size_t len)
     }
 
     // Parse FEC header
-    if (fec_offset + FPV_PACKET_HEADER_SIZE > len) {
+    if ((size_t)fec_offset + FPV_PACKET_HEADER_SIZE > len) {
         return false;
     }
 
@@ -220,6 +223,7 @@ static bool process_fpv_packet(const uint8_t *data, size_t len)
 
     uint8_t packet_index = FPV_GET_PACKET_INDEX(fec);
     uint32_t block_index = FPV_GET_BLOCK_INDEX(fec);
+    (void)block_index;  // Will be used for FEC recovery
 
     // For now, only process primary packets (index < K)
     // FEC recovery will be added later

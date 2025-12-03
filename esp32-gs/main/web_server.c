@@ -7,6 +7,8 @@
 #include "config_manager.h"
 #include "esp_http_server.h"
 #include "esp_timer.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 static const char *TAG = "web_srv";
 
@@ -319,6 +321,7 @@ static esp_err_t api_channel_handler(httpd_req_t *req)
 // Frame streaming task
 static void stream_task(void *arg)
 {
+    (void)arg;  // Unused
     ESP_LOGI(TAG, "Streaming task started");
 
     httpd_ws_frame_t ws_pkt;

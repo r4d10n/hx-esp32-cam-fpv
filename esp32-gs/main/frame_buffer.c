@@ -204,7 +204,6 @@ bool frame_buffer_commit_frame(void)
     }
 
     // Assemble frame from parts in order
-    size_t total_size = 0;
     bool valid = true;
 
     // Find highest part index we have

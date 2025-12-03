@@ -219,9 +219,9 @@ esp_err_t config_from_json(const char *json)
     if (ssid_ptr) {
         ssid_ptr += 8;
         const char *end = strchr(ssid_ptr, '"');
-        if (end && (end - ssid_ptr) < sizeof(g_config.ap_ssid)) {
+        if (end && (size_t)(end - ssid_ptr) < sizeof(g_config.ap_ssid)) {
             char ssid[32] = {0};
-            strncpy(ssid, ssid_ptr, end - ssid_ptr);
+            strncpy(ssid, ssid_ptr, (size_t)(end - ssid_ptr));
             // Note: password change requires separate call
             strncpy(g_config.ap_ssid, ssid, sizeof(g_config.ap_ssid) - 1);
             config_save();
