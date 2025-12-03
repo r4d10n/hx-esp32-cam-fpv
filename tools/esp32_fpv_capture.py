@@ -197,7 +197,8 @@ class FrameDisplay:
     """Handles live frame display and video recording"""
 
     def __init__(self, window_name: str = "ESP32-CAM FPV",
-                 video_output: str = None, fps: float = 30.0):
+                 video_output: str = None, fps: float = 30.0,
+                 enable_display: bool = True):
         self.window_name = window_name
         self.video_output = video_output
         self.fps = fps
@@ -206,9 +207,16 @@ class FrameDisplay:
         self.last_frame_time = 0
         self.frame_count = 0
         self.start_time = time.time()
+        self.has_gui = False
 
-        if HAS_CV2:
-            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+        if HAS_CV2 and enable_display:
+            try:
+                cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+                self.has_gui = True
+            except cv2.error as e:
+                print(f"Warning: GUI display not available ({e})")
+                print("Video recording will still work if --video is specified")
+                self.has_gui = False
 
     def display_frame(self, jpeg_data: bytes) -> bool:
         """Display a JPEG frame. Returns False if window closed."""
@@ -237,22 +245,24 @@ class FrameDisplay:
             if self.video_writer:
                 self.video_writer.write(frame)
 
-            # Calculate FPS
-            self.frame_count += 1
-            elapsed = time.time() - self.start_time
-            current_fps = self.frame_count / elapsed if elapsed > 0 else 0
+            # Only display if GUI is available
+            if self.has_gui:
+                # Calculate FPS
+                self.frame_count += 1
+                elapsed = time.time() - self.start_time
+                current_fps = self.frame_count / elapsed if elapsed > 0 else 0
 
-            # Add FPS overlay
-            cv2.putText(frame, f"FPS: {current_fps:.1f}", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                # Add FPS overlay
+                cv2.putText(frame, f"FPS: {current_fps:.1f}", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-            # Display frame
-            cv2.imshow(self.window_name, frame)
+                # Display frame
+                cv2.imshow(self.window_name, frame)
 
-            # Check for key press (q to quit)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q') or key == 27:  # q or ESC
-                return False
+                # Check for key press (q to quit)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q') or key == 27:  # q or ESC
+                    return False
 
             return True
 
@@ -265,7 +275,7 @@ class FrameDisplay:
         if self.video_writer:
             self.video_writer.release()
             print(f"Video saved to: {self.video_output}")
-        if HAS_CV2:
+        if self.has_gui:
             cv2.destroyAllWindows()
 
 
@@ -724,7 +734,8 @@ Dependencies:
     # Setup display
     display = None
     if args.display or args.video:
-        display = FrameDisplay(video_output=args.video, fps=args.fps)
+        display = FrameDisplay(video_output=args.video, fps=args.fps,
+                               enable_display=args.display)
 
     # Setup frame assembler
     save_frames = not args.no_save
