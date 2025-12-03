@@ -64,10 +64,10 @@ TAR := tar
 INCLUDE  := -Isrc \
 	-Isrc/utils \
 	-I../components/common \
-	-I/usr/include/ \
-	-I/usr/include/freetype2 \
 	-I$(IMGUI_DIR) \
-	-I$(IMGUI_DIR)/backends
+	-I$(IMGUI_DIR)/backends \
+	-I/usr/include/ \
+	-I/usr/include/freetype2
 
 # Debug flags
 DEBUG_FLAGS := -g -O0 -UNDEBUG

@@ -37,6 +37,9 @@
 
 #include "utils.h"
 
+// Define COMPAT_X86 for x86 compatibility
+#define COMPAT_X86
+
 // Constants to use when we specify whether to detect the rising edge
 //   or falling edge of the GPIO state change
 #define EDGE_RISING 0x01
@@ -193,6 +196,7 @@ void quit_signal(int dummy)
 ======================================================================*/
 static void write_to_file(const char *file, const char *text)
 {
+#ifndef COMPAT_X86
   FILE *f = fopen(file, "w");
   if (f)
   {
@@ -205,6 +209,10 @@ static void write_to_file(const char *file, const char *text)
             strerror(errno));
     exit(-1);
   }
+#else
+  // GPIO functionality disabled for x86 compatibility
+  return;
+#endif
 }
 
 /*======================================================================
@@ -213,6 +221,7 @@ static void write_to_file(const char *file, const char *text)
 ======================================================================*/
 static void unexport_pins(int *pins, int npins)
 {
+#ifndef COMPAT_X86
   for (int i = 0; i < npins; i++)
   {
     int pin = pins[i];
@@ -220,6 +229,10 @@ static void unexport_pins(int *pins, int npins)
     snprintf(s, sizeof(s), "%d", pin);
     write_to_file("/sys/class/gpio/unexport", s);
   }
+#else
+  // GPIO functionality disabled for x86 compatibility
+  return;
+#endif
 }
 
 /*======================================================================
@@ -232,6 +245,7 @@ static void unexport_pins(int *pins, int npins)
 ======================================================================*/
 static void export_pins(int *pins, int npins)
 {
+#ifndef COMPAT_X86
   int i;
   for (i = 0; i < npins; i++)
   {
@@ -244,6 +258,10 @@ static void export_pins(int *pins, int npins)
     snprintf(s, sizeof(s), "/sys/class/gpio/gpio%d/edge", pin);
     write_to_file(s, "both");
   }
+#else
+  // GPIO functionality disabled for x86 compatibility
+  return;
+#endif
 }
 
 /*======================================================================
@@ -257,6 +275,7 @@ static void export_pins(int *pins, int npins)
 ======================================================================*/
 int get_pin_state(int pin)
 {
+#ifndef COMPAT_X86
   char s[50];
   char buff[3];
   snprintf(s, sizeof(s), "/sys/class/gpio/gpio%d/value", pin);
@@ -266,6 +285,10 @@ int get_pin_state(int pin)
   if (rc == 2)
     return (buff[0] - '0');
   return -1;
+#else
+  // GPIO functionality disabled for x86 compatibility
+  return 0;
+#endif
 }
 
 /*======================================================================
@@ -467,6 +490,7 @@ void polling_thread_func()
 //======================================================================
 void gpio_buttons_start()
 {
+#ifndef COMPAT_X86
   int pin = 0;
 
   if ( isRadxaZero3() )
@@ -509,16 +533,25 @@ void gpio_buttons_start()
   polling_thread = std::thread(polling_thread_func);
 
   polling_thread.detach();
+#else
+  // GPIO functionality disabled for x86 compatibility
+  return;
+#endif
 }
 
 //======================================================================
 //======================================================================
 void gpio_buttons_stop()
 {
+#ifndef COMPAT_X86
   polling_thread.join();
   dbglog("GPIO Cleaning up\n");
   unexport_pins(pins, npins);
   close_uinput(uinput_fd);
+#else
+  // GPIO functionality disabled for x86 compatibility
+  return;
+#endif
 }
 
 /*======================================================================
