@@ -16,10 +16,9 @@ CONFIG_ESP_WIFI_ENABLE_PROMISCUOUS=y
 # Increase task watchdog timeout
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
 
-# Enable PSRAM if available (optional - will use internal RAM if not present)
-# CONFIG_ESP32S3_SPIRAM_SUPPORT=y
-# CONFIG_SPIRAM_MODE_OCT=y
-# CONFIG_SPIRAM_SPEED_80M=y
+# PSRAM disabled - use internal RAM only
+# Set to y to enable PSRAM on boards that have it
+CONFIG_SPIRAM=n
 
 # HTTP Server
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
