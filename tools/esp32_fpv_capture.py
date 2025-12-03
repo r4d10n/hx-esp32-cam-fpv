@@ -6,7 +6,9 @@ This tool captures packets from ESP32-CAM FPV transmissions and extracts
 JPEG frames. It can read from pcapng files or capture live from a monitor
 mode interface.
 
-Based on the hx-esp32-cam-fpv protocol:
+Compatible with hx-esp32-cam-fpv protocol v0.4 (RomanLut/hx-esp32-cam-fpv)
+
+Protocol structure:
 - FEC Packet_Header (12 bytes): version, signature, device IDs, size, block/packet indices
 - Air2Ground_Video_Packet (18 bytes): type, size, resolution, part_index, last_part, frame_index
 - JPEG payload follows the headers
@@ -17,6 +19,9 @@ Usage:
 
     # Live capture (requires root and monitor mode interface):
     python esp32_fpv_capture.py --interface wlan0mon --output frames/
+
+    # Specify custom FEC K value (default: 6):
+    python esp32_fpv_capture.py --input capture.pcapng --output frames/ --fec-k 8
 """
 
 import argparse
@@ -45,8 +50,8 @@ except (ImportError, Exception):
 # Protocol constants
 PACKET_SIGNATURE = 0x38  # 56 decimal
 PACKET_VERSION = 3       # Current version in captures (was 2 in older code)
-FEC_K = 6                # Number of primary data packets per FEC block
-FEC_N = 12               # Total packets per FEC block (K primary + N-K parity)
+DEFAULT_FEC_K = 6        # Default number of primary data packets per FEC block
+DEFAULT_FEC_N = 12       # Default total packets per FEC block (K primary + N-K parity)
 
 # Packet type enumeration
 class PacketType:
@@ -173,8 +178,9 @@ class VideoPart:
 class FrameAssembler:
     """Assembles complete JPEG frames from video packet parts"""
 
-    def __init__(self, output_dir: str, verbose: bool = False):
+    def __init__(self, output_dir: str, fec_k: int = DEFAULT_FEC_K, verbose: bool = False):
         self.output_dir = output_dir
+        self.fec_k = fec_k
         self.verbose = verbose
         self.frames: Dict[int, Dict[int, VideoPart]] = defaultdict(dict)
         self.completed_frames: set = set()
@@ -293,7 +299,7 @@ def process_packet(raw_data: bytes, assembler: FrameAssembler) -> bool:
     assembler.stats['packets_processed'] += 1
 
     # Skip FEC parity packets (only process primary data packets)
-    if fec_header.packet_index >= FEC_K:
+    if fec_header.packet_index >= assembler.fec_k:
         assembler.stats['fec_packets'] += 1
         return True
 
@@ -402,6 +408,9 @@ Examples:
 
     # Extract with verbose output:
     python esp32_fpv_capture.py -i capture.pcapng -o frames/ -v
+
+    # Use custom FEC K value:
+    python esp32_fpv_capture.py -i capture.pcapng -o frames/ --fec-k 8
         """
     )
 
@@ -419,11 +428,13 @@ Examples:
                         help='Number of packets to capture (0 = unlimited, live capture only)')
     parser.add_argument('-t', '--timeout', type=int, default=None,
                         help='Capture timeout in seconds (live capture only)')
+    parser.add_argument('-k', '--fec-k', type=int, default=DEFAULT_FEC_K,
+                        help=f'FEC K value - number of primary data packets (default: {DEFAULT_FEC_K})')
 
     args = parser.parse_args()
 
     # Create frame assembler
-    assembler = FrameAssembler(args.output, verbose=args.verbose)
+    assembler = FrameAssembler(args.output, fec_k=args.fec_k, verbose=args.verbose)
 
     try:
         if args.input:
