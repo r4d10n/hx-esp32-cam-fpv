@@ -1,0 +1,15 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "wifi_manager.c"
+        "packet_rx.c"
+        "frame_buffer.c"
+        "web_server.c"
+        "config_manager.c"
+    INCLUDE_DIRS
+        "."
+    EMBED_FILES
+        "../frontend/index.html"
+        "../frontend/app.js"
+        "../frontend/style.css"
+)

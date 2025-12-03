@@ -1,0 +1,271 @@
+/**
+ * ESP32 FPV Ground Station - Styles
+ */
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #000;
+    color: #fff;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+}
+
+#container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+/* Video display */
+#video-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #111;
+}
+
+#video {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+#video.hidden {
+    display: none;
+}
+
+/* No signal overlay */
+#no-signal {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: #666;
+}
+
+#no-signal.hidden {
+    display: none;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #333;
+    border-top-color: #0f0;
+    border-radius: 50%;
+    margin: 0 auto 10px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Stats overlay */
+#stats-overlay {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    font-family: monospace;
+    font-size: 14px;
+    color: #0f0;
+    text-shadow: 1px 1px 2px #000, -1px -1px 2px #000;
+    pointer-events: none;
+    z-index: 100;
+}
+
+#stats-overlay div {
+    margin-bottom: 4px;
+}
+
+/* Settings button */
+#settings-btn {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+    z-index: 100;
+    transition: background 0.2s;
+}
+
+#settings-btn:hover {
+    background: rgba(255,255,255,0.3);
+}
+
+/* Settings panel */
+#settings-panel {
+    position: fixed;
+    top: 60px;
+    right: 10px;
+    width: 280px;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    background: rgba(30, 30, 30, 0.95);
+    border-radius: 8px;
+    padding: 15px;
+    z-index: 200;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+
+#settings-panel.hidden {
+    display: none;
+}
+
+#settings-panel h3 {
+    margin-bottom: 15px;
+    color: #0f0;
+    font-size: 16px;
+}
+
+.setting-group {
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #333;
+}
+
+.setting-group:last-of-type {
+    border-bottom: none;
+}
+
+.setting-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: #888;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+/* Channel buttons */
+.channel-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.channel-buttons button {
+    width: 36px;
+    height: 32px;
+    border: 1px solid #444;
+    border-radius: 4px;
+    background: #222;
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.channel-buttons button:hover {
+    background: #333;
+    border-color: #666;
+}
+
+.channel-buttons button.active {
+    background: #0a0;
+    border-color: #0f0;
+    color: #fff;
+}
+
+/* Stats */
+#detailed-stats {
+    font-family: monospace;
+    font-size: 12px;
+    color: #aaa;
+}
+
+#detailed-stats div {
+    margin-bottom: 4px;
+}
+
+#detailed-stats span {
+    color: #0f0;
+}
+
+/* Input fields */
+#settings-panel input[type="text"],
+#settings-panel input[type="password"] {
+    width: 100%;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    border: 1px solid #444;
+    border-radius: 4px;
+    background: #222;
+    color: #fff;
+    font-size: 14px;
+}
+
+#settings-panel input:focus {
+    outline: none;
+    border-color: #0f0;
+}
+
+/* Buttons */
+#settings-panel button {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 4px;
+    background: #0a0;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+#settings-panel button:hover {
+    background: #0c0;
+}
+
+.close-btn {
+    margin-top: 10px;
+    background: #444 !important;
+}
+
+.close-btn:hover {
+    background: #555 !important;
+}
+
+/* Mobile adjustments */
+@media (max-width: 480px) {
+    #settings-panel {
+        width: calc(100% - 20px);
+        right: 10px;
+        left: 10px;
+    }
+
+    #stats-overlay {
+        font-size: 12px;
+    }
+
+    .channel-buttons button {
+        width: 28px;
+        height: 28px;
+        font-size: 11px;
+    }
+}
+
+/* Fullscreen */
+#video-container:fullscreen {
+    background: #000;
+}
+
+#video-container:fullscreen #video {
+    width: 100%;
+    height: 100%;
+}

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>ESP32 FPV Ground Station</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div id="container">
+        <!-- Video Display -->
+        <div id="video-container">
+            <img id="video" alt="FPV Stream">
+            <div id="no-signal">
+                <div class="spinner"></div>
+                <p>Waiting for video...</p>
+            </div>
+        </div>
+
+        <!-- Stats Overlay -->
+        <div id="stats-overlay">
+            <div id="fps">0 FPS</div>
+            <div id="rssi">RSSI: -- dBm</div>
+            <div id="channel">CH: --</div>
+        </div>
+
+        <!-- Control Panel (toggle) -->
+        <button id="settings-btn" onclick="toggleSettings()">⚙</button>
+
+        <div id="settings-panel" class="hidden">
+            <h3>Settings</h3>
+
+            <div class="setting-group">
+                <label>Channel</label>
+                <div class="channel-buttons">
+                    <button onclick="setChannel(1)">1</button>
+                    <button onclick="setChannel(2)">2</button>
+                    <button onclick="setChannel(3)">3</button>
+                    <button onclick="setChannel(4)">4</button>
+                    <button onclick="setChannel(5)">5</button>
+                    <button onclick="setChannel(6)">6</button>
+                    <button onclick="setChannel(7)">7</button>
+                    <button onclick="setChannel(8)">8</button>
+                    <button onclick="setChannel(9)">9</button>
+                    <button onclick="setChannel(10)">10</button>
+                    <button onclick="setChannel(11)">11</button>
+                </div>
+            </div>
+
+            <div class="setting-group">
+                <label>Statistics</label>
+                <div id="detailed-stats">
+                    <div>Packets: <span id="stat-packets">0</span></div>
+                    <div>Valid: <span id="stat-valid">0</span></div>
+                    <div>Frames: <span id="stat-frames">0</span></div>
+                    <div>Incomplete: <span id="stat-incomplete">0</span></div>
+                    <div>Clients: <span id="stat-clients">0</span></div>
+                </div>
+            </div>
+
+            <div class="setting-group">
+                <label>AP Configuration</label>
+                <input type="text" id="ap-ssid" placeholder="SSID">
+                <input type="password" id="ap-pass" placeholder="Password">
+                <button onclick="saveApConfig()">Save (Restart Required)</button>
+            </div>
+
+            <button class="close-btn" onclick="toggleSettings()">Close</button>
+        </div>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
