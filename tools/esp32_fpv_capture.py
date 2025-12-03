@@ -38,10 +38,20 @@ try:
 except ImportError:
     HAS_DPKT = False
 
-# Scapy has issues in some environments, make import optional
+# Try to import pcap for live capture (more reliable than scapy for monitor mode)
+HAS_PCAP = False
+try:
+    import pcap
+    HAS_PCAP = True
+except ImportError:
+    pass
+
+# Scapy as fallback for live capture (has issues in some environments)
 HAS_SCAPY = False
 try:
-    from scapy.all import sniff, RadioTap
+    from scapy.all import sniff, conf
+    # Disable scapy's verbose output
+    conf.verb = 0
     HAS_SCAPY = True
 except (ImportError, Exception):
     # Scapy may fail to import due to cryptography/cffi issues
@@ -369,28 +379,90 @@ def process_pcapng_file(input_file: str, assembler: FrameAssembler) -> None:
     print(f"Finished processing {packet_count} packets")
 
 
-def process_live_capture(interface: str, assembler: FrameAssembler,
-                        count: int = 0, timeout: int = None) -> None:
-    """Capture and process live packets from monitor mode interface"""
-    if not HAS_SCAPY:
-        print("Error: scapy library is required for live capture")
-        print("Install with: pip install scapy")
-        sys.exit(1)
-
-    print(f"Starting live capture on {interface}...")
+def process_live_capture_pcap(interface: str, assembler: FrameAssembler,
+                              count: int = 0, timeout: int = None) -> None:
+    """Capture using pypcap library (preferred for monitor mode)"""
+    print(f"Starting live capture on {interface} using pcap...")
     print("Press Ctrl+C to stop")
 
+    try:
+        # Create pcap handle for monitor mode interface
+        pc = pcap.pcap(name=interface, promisc=True, immediate=True,
+                       timeout_ms=1000 if timeout else 0)
+
+        packet_count = 0
+        try:
+            for ts, buf in pc:
+                process_packet(buf, assembler)
+                packet_count += 1
+
+                if packet_count % 100 == 0:
+                    print(f"Captured {packet_count} packets, {assembler.stats['frames_saved']} frames...")
+
+                if count > 0 and packet_count >= count:
+                    break
+        except KeyboardInterrupt:
+            print("\nCapture stopped by user")
+
+        print(f"Captured {packet_count} packets total")
+
+    except Exception as e:
+        print(f"Error during pcap capture: {e}")
+        sys.exit(1)
+
+
+def process_live_capture_scapy(interface: str, assembler: FrameAssembler,
+                               count: int = 0, timeout: int = None) -> None:
+    """Capture using scapy library (fallback)"""
+    print(f"Starting live capture on {interface} using scapy...")
+    print("Press Ctrl+C to stop")
+
+    packet_count = [0]  # Use list to allow modification in nested function
+
     def packet_handler(pkt):
-        raw_data = bytes(pkt)
-        process_packet(raw_data, assembler)
+        try:
+            raw_data = bytes(pkt)
+            process_packet(raw_data, assembler)
+            packet_count[0] += 1
+
+            if packet_count[0] % 100 == 0:
+                print(f"Captured {packet_count[0]} packets, {assembler.stats['frames_saved']} frames...")
+        except Exception as e:
+            if assembler.verbose:
+                print(f"Error processing packet: {e}")
 
     try:
-        sniff(iface=interface, prn=packet_handler, count=count if count > 0 else None,
-              timeout=timeout, store=False)
+        # Use L2socket explicitly for monitor mode
+        sniff(iface=interface, prn=packet_handler,
+              count=count if count > 0 else 0,
+              timeout=timeout, store=False,
+              monitor=True)  # Enable monitor mode in scapy
     except KeyboardInterrupt:
         print("\nCapture stopped by user")
     except PermissionError:
         print("Error: Root privileges required for live capture")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error during scapy capture: {e}")
+        print("Try using pypcap instead: pip install pypcap")
+        sys.exit(1)
+
+    print(f"Captured {packet_count[0]} packets total")
+
+
+def process_live_capture(interface: str, assembler: FrameAssembler,
+                        count: int = 0, timeout: int = None) -> None:
+    """Capture and process live packets from monitor mode interface"""
+    # Prefer pcap over scapy for monitor mode (more reliable)
+    if HAS_PCAP:
+        process_live_capture_pcap(interface, assembler, count, timeout)
+    elif HAS_SCAPY:
+        process_live_capture_scapy(interface, assembler, count, timeout)
+    else:
+        print("Error: No packet capture library available for live capture")
+        print("Install one of:")
+        print("  pip install pypcap   (recommended for monitor mode)")
+        print("  pip install scapy    (fallback)")
         sys.exit(1)
 
 
@@ -411,6 +483,10 @@ Examples:
 
     # Use custom FEC K value:
     python esp32_fpv_capture.py -i capture.pcapng -o frames/ --fec-k 8
+
+Dependencies for live capture (install one):
+    pip install pypcap   # Recommended - uses libpcap directly
+    pip install scapy    # Fallback - may have issues with monitor mode
         """
     )
 
