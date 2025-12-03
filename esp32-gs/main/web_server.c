@@ -260,7 +260,7 @@ static esp_err_t api_config_handler(httpd_req_t *req)
             config_from_json(buf);
             httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
         } else {
-            httpd_resp_send_400(req);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad Request");
         }
     }
     return ESP_OK;
@@ -314,7 +314,7 @@ static esp_err_t api_channel_handler(httpd_req_t *req)
         }
     }
 
-    httpd_resp_send_400(req);
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid channel");
     return ESP_OK;
 }
 

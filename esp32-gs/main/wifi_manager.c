@@ -48,8 +48,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                 wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *)event_data;
                 s_station_count++;
                 g_stats.websocket_clients = s_station_count;
-                ESP_LOGI(TAG, "Station " MACSTR " connected, total=%d",
-                         MAC2STR(event->mac), s_station_count);
+                ESP_LOGI(TAG, "Station %02x:%02x:%02x:%02x:%02x:%02x connected, total=%u",
+                         (unsigned)event->mac[0], (unsigned)event->mac[1],
+                         (unsigned)event->mac[2], (unsigned)event->mac[3],
+                         (unsigned)event->mac[4], (unsigned)event->mac[5],
+                         (unsigned)s_station_count);
                 break;
             }
 
@@ -57,8 +60,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                 wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *)event_data;
                 if (s_station_count > 0) s_station_count--;
                 g_stats.websocket_clients = s_station_count;
-                ESP_LOGI(TAG, "Station " MACSTR " disconnected, total=%d",
-                         MAC2STR(event->mac), s_station_count);
+                ESP_LOGI(TAG, "Station %02x:%02x:%02x:%02x:%02x:%02x disconnected, total=%u",
+                         (unsigned)event->mac[0], (unsigned)event->mac[1],
+                         (unsigned)event->mac[2], (unsigned)event->mac[3],
+                         (unsigned)event->mac[4], (unsigned)event->mac[5],
+                         (unsigned)s_station_count);
                 break;
             }
 
