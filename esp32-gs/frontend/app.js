@@ -160,25 +160,16 @@ async function updateStats() {
         osdChannel.textContent = stats.channel;
         currentChannel = stats.channel;
 
-        // Update stats panel
+        // Update stats panel - Ground Station section
         updateElement('stat-pkts-rx', stats.packets_received);
         updateElement('stat-pkts-valid', stats.packets_valid);
         updateElement('stat-frames-ok', stats.frames_complete);
         updateElement('stat-frames-lost', stats.frames_incomplete);
         updateElement('stat-ws', stats.websocket_clients);
 
-        // FEC stats if available
-        if (stats.fec) {
-            updateElement('stat-fec-rx', stats.fec.blocks_received || 0);
-            updateElement('stat-fec-ok', stats.fec.blocks_complete || 0);
-            updateElement('stat-fec-rec', stats.fec.blocks_recovered || 0);
-            updateElement('stat-fec-fail', stats.fec.blocks_failed || 0);
-            updateElement('stat-pkts-rec', stats.fec.packets_recovered || 0);
-
-            // Update OSD FEC indicator
-            const recovered = stats.fec.packets_recovered || 0;
-            const failed = stats.fec.blocks_failed || 0;
-            osdFec.textContent = `${recovered}/${failed}`;
+        // Update RSSI from ground station stats if available
+        if (stats.rssi_dbm !== undefined && stats.rssi_dbm !== 0) {
+            osdRssi.textContent = `${stats.rssi_dbm} dBm`;
         }
 
         // Highlight current channel button
@@ -201,52 +192,74 @@ async function loadAirStats() {
         const resp = await fetch('/api/air');
         if (!resp.ok) return;
 
-        airStats = await resp.json();
+        const data = await resp.json();
+        const air = data.air || {};
+        const fec = data.fec || {};
 
-        // Update OSD telemetry
-        if (airStats.rssi_dbm !== undefined) {
-            osdRssi.textContent = `${airStats.rssi_dbm} dBm`;
+        // Update connection status
+        const connected = data.connected;
+        if (connected !== undefined) {
+            setConnectionStatus(connected);
         }
-        if (airStats.temperature !== undefined) {
-            osdTemp.textContent = `${airStats.temperature}°C`;
+
+        // Update OSD telemetry from air unit data
+        if (air.rssi_dbm !== undefined) {
+            osdRssi.textContent = `${air.rssi_dbm} dBm`;
         }
-        if (airStats.latency_ms !== undefined) {
-            osdLatency.textContent = `${airStats.latency_ms} ms`;
+        if (air.temperature !== undefined) {
+            osdTemp.textContent = `${air.temperature}°C`;
         }
-        if (airStats.resolution !== undefined) {
-            osdResolution.textContent = RESOLUTION_NAMES[airStats.resolution] || '---';
+        if (data.latency_ms !== undefined) {
+            osdLatency.textContent = `${data.latency_ms} ms`;
         }
-        if (airStats.curr_quality !== undefined) {
-            osdQuality.textContent = airStats.curr_quality;
+        if (air.resolution !== undefined) {
+            osdResolution.textContent = RESOLUTION_NAMES[air.resolution] || '---';
+        }
+        if (air.quality !== undefined) {
+            osdQuality.textContent = air.quality;
         }
 
         // Recording status
-        if (airStats.air_record_state !== undefined) {
-            const recording = airStats.air_record_state === 1;
+        if (air.recording !== undefined) {
+            const recording = air.recording;
             osdRecStatus.textContent = recording ? 'REC' : 'OFF';
             document.querySelector('.rec-dot').classList.toggle('active', recording);
         }
 
+        // FEC stats - update OSD indicator (recovered/failed)
+        const recovered = fec.packets_recovered || 0;
+        const failed = fec.blocks_failed || 0;
+        osdFec.textContent = `${recovered}/${failed}`;
+
+        // Update stats panel - FEC section
+        updateElement('stat-fec-rx', fec.blocks_received || 0);
+        updateElement('stat-fec-ok', fec.blocks_complete || 0);
+        updateElement('stat-fec-rec', fec.blocks_recovered || 0);
+        updateElement('stat-fec-fail', fec.blocks_failed || 0);
+        updateElement('stat-pkts-rec', fec.packets_recovered || 0);
+
         // Update stats panel - Air Unit section
-        updateElement('stat-air-rssi', `${airStats.rssi_dbm || '--'} dBm`);
-        updateElement('stat-air-noise', `${airStats.noise_floor_dbm || '--'} dBm`);
-        updateElement('stat-air-temp', `${airStats.temperature || '--'}°C`);
-        updateElement('stat-air-fps', airStats.capture_fps || '--');
-        updateElement('stat-air-tx', `${airStats.out_packet_rate || 0} pkt/s`);
-        updateElement('stat-air-rx', `${airStats.in_packet_rate || 0} pkt/s`);
+        updateElement('stat-air-rssi', `${air.rssi_dbm ?? '--'} dBm`);
+        updateElement('stat-air-noise', `${air.noise_floor_dbm ?? '--'} dBm`);
+        updateElement('stat-air-temp', `${air.temperature ?? '--'}°C`);
+        updateElement('stat-air-fps', air.capture_fps ?? '--');
+        updateElement('stat-air-tx', `${air.out_packet_rate || 0} pkt/s`);
+        updateElement('stat-air-rx', `${air.in_packet_rate || 0} pkt/s`);
 
         // SD card status
-        if (airStats.sd_detected !== undefined) {
+        if (air.sd_detected !== undefined) {
             let sdStatus = '--';
-            if (airStats.sd_detected) {
-                const freeGB = (airStats.sd_free_space_gb16 || 0) / 16;
-                sdStatus = airStats.sd_error ? 'ERROR' : `${freeGB.toFixed(1)} GB`;
-                if (airStats.sd_slow) sdStatus += ' (SLOW)';
+            if (air.sd_detected) {
+                const freeGB = air.sd_free_gb || 0;
+                sdStatus = air.sd_error ? 'ERROR' : `${freeGB.toFixed(1)} GB free`;
             } else {
                 sdStatus = 'No Card';
             }
             updateElement('stat-sd', sdStatus);
         }
+
+        // Store for other uses
+        airStats = { ...data, air, fec };
 
     } catch (err) {
         // Air stats endpoint may not be available yet
