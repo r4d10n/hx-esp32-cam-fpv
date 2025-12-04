@@ -68,12 +68,14 @@ menu "ESP32 FPV Ground Station Configuration"
     menu "Network Interface Selection"
 
         config FPV_GS_ENABLE_USB_NET
-            bool "Enable USB Network (NCM/RNDIS)"
+            bool "Enable USB Network (NCM)"
             default n
             help
-                Enable USB networking using NCM/RNDIS protocol.
+                Enable USB networking using NCM protocol.
                 The device appears as a USB network adapter on the host PC.
+                Default IP: 192.168.4.1 (configurable via usb-netif component).
                 Requires USB-OTG port (not USB-Serial/JTAG).
+                Note: USB Serial/JTAG must be disabled in sdkconfig.
 
         config FPV_GS_ENABLE_WIFI_AP
             bool "Enable WiFi Access Point"
@@ -82,20 +84,6 @@ menu "ESP32 FPV Ground Station Configuration"
                 Enable WiFi access point for wireless web interface access.
                 Promiscuous packet capture is always enabled regardless.
                 Disable to save memory when using USB-only mode.
-
-        config FPV_GS_USB_NET_IP
-            string "USB Network IP Address"
-            default "192.168.8.1"
-            depends on FPV_GS_ENABLE_USB_NET
-            help
-                IP address for the USB network interface.
-
-        config FPV_GS_USB_NET_MASK
-            string "USB Network Subnet Mask"
-            default "255.255.255.0"
-            depends on FPV_GS_ENABLE_USB_NET
-            help
-                Subnet mask for the USB network interface.
 
     endmenu
 

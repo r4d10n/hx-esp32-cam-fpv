@@ -1,4 +1,6 @@
 ## IDF Component Manager Manifest File
 dependencies:
-  # ESP TinyUSB for USB networking
-  espressif/esp_tinyusb: "^1.0.0"
+  # USB NCM networking with esp_netif integration
+  chegewara/usb-netif: "*"
+  espressif/esp_tinyusb: "^1.4.0"
+  idf: "^5.0"
