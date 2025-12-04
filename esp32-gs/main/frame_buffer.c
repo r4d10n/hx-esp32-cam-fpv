@@ -9,9 +9,15 @@
 static const char *TAG = "frame_buf";
 
 #define FRAME_BUFFER_COUNT CONFIG_FPV_GS_FRAME_BUFFER_COUNT
-#define MAX_FRAME_SIZE CONFIG_FPV_GS_MAX_FRAME_SIZE
+#define MAX_FRAME_SIZE_CONFIG CONFIG_FPV_GS_MAX_FRAME_SIZE
+#define MIN_FRAME_SIZE 32768      // 32KB minimum
+#define MAX_FRAME_SIZE_CAP 131072 // 128KB maximum per buffer
+#define RESERVED_RAM 40960        // 40KB reserve for WiFi/TCP stack
 #define MAX_PARTS 128  // Maximum parts per frame
 #define FRAME_TIMEOUT_US (100 * 1000)  // 100ms timeout for incomplete frames
+
+// Actual allocated buffer size (determined at runtime)
+static size_t s_buffer_size = 0;
 
 // Frame buffer entry
 typedef struct {
@@ -62,21 +68,54 @@ esp_err_t frame_buffer_init(void)
 
     bool using_psram = false;
 
+    // Calculate optimal buffer size based on available RAM
+    // Need: FRAME_BUFFER_COUNT buffers + 1 assembly buffer
+    size_t total_buffers = FRAME_BUFFER_COUNT + 1;
+    size_t available_for_buffers;
+
+    if (free_psram >= total_buffers * MIN_FRAME_SIZE) {
+        // Use PSRAM - can use larger buffers
+        available_for_buffers = free_psram;
+        using_psram = true;
+    } else {
+        // Use internal RAM - leave reserve for WiFi/TCP
+        available_for_buffers = (free_internal > RESERVED_RAM) ?
+                                (free_internal - RESERVED_RAM) : 0;
+    }
+
+    // Calculate per-buffer size
+    s_buffer_size = available_for_buffers / total_buffers;
+
+    // Clamp to reasonable bounds
+    if (s_buffer_size < MIN_FRAME_SIZE) {
+        s_buffer_size = MIN_FRAME_SIZE;
+        ESP_LOGW(TAG, "Low memory, using minimum buffer size %u", (unsigned)s_buffer_size);
+    }
+    if (s_buffer_size > MAX_FRAME_SIZE_CAP) {
+        s_buffer_size = MAX_FRAME_SIZE_CAP;
+    }
+
+    // Align to 4KB for efficient allocation
+    s_buffer_size = (s_buffer_size / 4096) * 4096;
+    if (s_buffer_size < MIN_FRAME_SIZE) {
+        s_buffer_size = MIN_FRAME_SIZE;
+    }
+
+    ESP_LOGI(TAG, "Calculated buffer size: %u bytes (%u KB)",
+             (unsigned)s_buffer_size, (unsigned)(s_buffer_size / 1024));
+
     // Allocate frame buffers
-    // Try PSRAM first, fall back to internal RAM
     for (int i = 0; i < FRAME_BUFFER_COUNT; i++) {
-        if (free_psram >= MAX_FRAME_SIZE) {
-            s_frames[i].data = heap_caps_malloc(MAX_FRAME_SIZE,
+        if (using_psram) {
+            s_frames[i].data = heap_caps_malloc(s_buffer_size,
                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-            if (s_frames[i].data != NULL) {
-                using_psram = true;
-            }
         }
 
         if (s_frames[i].data == NULL) {
             // Fall back to internal RAM
-            s_frames[i].data = heap_caps_malloc(MAX_FRAME_SIZE,
+            s_frames[i].data = heap_caps_malloc(s_buffer_size,
                 MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+            using_psram = false;
         }
 
         if (s_frames[i].data == NULL) {
@@ -89,7 +128,7 @@ esp_err_t frame_buffer_init(void)
             return ESP_ERR_NO_MEM;
         }
 
-        s_frames[i].capacity = MAX_FRAME_SIZE;
+        s_frames[i].capacity = s_buffer_size;
         s_frames[i].size = 0;
         s_frames[i].frame_index = 0;
         s_frames[i].in_progress = false;
@@ -98,13 +137,13 @@ esp_err_t frame_buffer_init(void)
         memset(s_frames[i].parts_mask, 0, sizeof(s_frames[i].parts_mask));
     }
 
-    // Allocate assembly buffer
-    if (free_psram >= MAX_FRAME_SIZE) {
-        s_assembly.data = heap_caps_malloc(MAX_FRAME_SIZE,
+    // Allocate assembly buffer (same size as frame buffers)
+    if (using_psram) {
+        s_assembly.data = heap_caps_malloc(s_buffer_size,
             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
     if (s_assembly.data == NULL) {
-        s_assembly.data = heap_caps_malloc(MAX_FRAME_SIZE,
+        s_assembly.data = heap_caps_malloc(s_buffer_size,
             MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
     if (s_assembly.data == NULL) {
@@ -114,10 +153,12 @@ esp_err_t frame_buffer_init(void)
 
     // Log memory status after allocation
     size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    ESP_LOGI(TAG, "Frame buffer initialized: %d buffers x %d bytes (%s RAM)",
-             FRAME_BUFFER_COUNT, MAX_FRAME_SIZE,
+    ESP_LOGI(TAG, "Frame buffer initialized: %d buffers x %u KB (%s RAM)",
+             FRAME_BUFFER_COUNT, (unsigned)(s_buffer_size / 1024),
              using_psram ? "PSRAM" : "internal");
-    ESP_LOGI(TAG, "Free internal heap after allocation: %u bytes", (unsigned)free_heap);
+    ESP_LOGI(TAG, "Total frame memory: %u KB, free heap: %u KB",
+             (unsigned)(s_buffer_size * total_buffers / 1024),
+             (unsigned)(free_heap / 1024));
 
     return ESP_OK;
 }
@@ -203,8 +244,9 @@ bool frame_buffer_add_part(uint8_t part_index, const uint8_t *data, size_t len)
         total_after += s_assembly.sizes[i];
     }
 
-    if (total_after > MAX_FRAME_SIZE) {
-        ESP_LOGW(TAG, "Frame too large, dropping part");
+    if (total_after > s_buffer_size) {
+        ESP_LOGW(TAG, "Frame too large (%u > %u), dropping part",
+                 (unsigned)total_after, (unsigned)s_buffer_size);
         xSemaphoreGive(s_mutex);
         return false;
     }
