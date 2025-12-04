@@ -2,7 +2,7 @@ menu "ESP32 FPV Ground Station Configuration"
 
     config FPV_GS_DEFAULT_CHANNEL
         int "Default WiFi channel"
-        default 1
+        default 7
         range 1 14
         help
             Default WiFi channel for FPV reception and AP.
