@@ -65,4 +65,36 @@ menu "ESP32 FPV Ground Station Configuration"
         help
             Total number of packets per FEC block (K data + N-K parity).
 
+    menu "Network Interface Selection"
+
+        config FPV_GS_ENABLE_USB_NET
+            bool "Enable USB Network (NCM/RNDIS)"
+            default y
+            help
+                Enable USB networking using NCM/RNDIS protocol.
+                The device appears as a USB network adapter on the host PC.
+
+        config FPV_GS_ENABLE_WIFI
+            bool "Enable WiFi (AP + Promiscuous)"
+            default n
+            help
+                Enable WiFi access point and promiscuous mode for packet capture.
+                Disable to save memory when using USB-only mode.
+
+        config FPV_GS_USB_NET_IP
+            string "USB Network IP Address"
+            default "192.168.8.1"
+            depends on FPV_GS_ENABLE_USB_NET
+            help
+                IP address for the USB network interface.
+
+        config FPV_GS_USB_NET_MASK
+            string "USB Network Subnet Mask"
+            default "255.255.255.0"
+            depends on FPV_GS_ENABLE_USB_NET
+            help
+                Subnet mask for the USB network interface.
+
+    endmenu
+
 endmenu

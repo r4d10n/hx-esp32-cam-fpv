@@ -3,7 +3,9 @@
  */
 
 #include "config_manager.h"
+#ifdef CONFIG_FPV_GS_ENABLE_WIFI
 #include "wifi_manager.h"
+#endif
 #include "nvs_flash.h"
 #include "nvs.h"
 #include <stdio.h>
@@ -138,14 +140,20 @@ esp_err_t config_set_channel(uint8_t channel)
     g_config.channel = channel;
     g_stats.channel = channel;
 
-    // Apply channel change immediately
+#ifdef CONFIG_FPV_GS_ENABLE_WIFI
+    // Apply channel change immediately (only when WiFi is enabled)
     esp_err_t ret = wifi_set_channel(channel);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Channel changed to %d", channel);
         config_save();
     }
-
     return ret;
+#else
+    // No WiFi - just save the setting for future use
+    ESP_LOGI(TAG, "Channel set to %d (WiFi disabled)", channel);
+    config_save();
+    return ESP_OK;
+#endif
 }
 
 esp_err_t config_set_ap_credentials(const char *ssid, const char *password)

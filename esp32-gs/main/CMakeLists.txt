@@ -6,10 +6,17 @@ idf_component_register(
         "frame_buffer.c"
         "web_server.c"
         "config_manager.c"
+        "usb_network.c"
     INCLUDE_DIRS
         "."
     EMBED_FILES
         "../frontend/index.html"
         "../frontend/app.js"
         "../frontend/style.css"
+    REQUIRES
+        esp_wifi
+        nvs_flash
+        esp_http_server
+        esp_netif
+        tinyusb
 )
