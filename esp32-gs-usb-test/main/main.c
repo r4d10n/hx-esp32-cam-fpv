@@ -1,29 +1,32 @@
 /**
- * USB NCM Network Test
- * ESP32-S3 as USB network device with web server
- * Using chegewara/usb-netif component for proper esp_netif integration
+ * USB CDC + NCM Composite Test
+ * ESP32-S3 as USB composite device: CDC (console) + NCM (network)
+ * Using chegewara/usb-netif component for esp_netif integration
  */
 
 #include <stdio.h>
 #include <string.h>
+#include "sdkconfig.h"
 #include "esp_log.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_mac.h"
 #include "esp_http_server.h"
 
 #include "usb_netif.h"
 
-static const char *TAG = "USB_NCM";
+static const char *TAG = "USB_CDC_NCM";
 
 static httpd_handle_t s_server = NULL;
 
 // Simple HTML page
 static const char *html_page =
-    "<!DOCTYPE html><html><head><title>USB NCM Test</title>"
+    "<!DOCTYPE html><html><head><title>USB CDC+NCM Test</title>"
     "<style>body{font-family:sans-serif;margin:40px;}</style></head>"
-    "<body><h1>USB NCM Network Working!</h1>"
-    "<p>ESP32-S3 USB Network Control Model is operational.</p>"
-    "<p>Device IP: 192.168.4.1 (default from usb-netif component)</p>"
+    "<body><h1>USB CDC+NCM Composite Working!</h1>"
+    "<p>ESP32-S3 USB Composite Device:</p>"
+    "<ul><li>CDC ACM - Serial Console</li>"
+    "<li>NCM - Network (IP: 192.168.4.1)</li></ul>"
     "</body></html>";
 
 // HTTP handler
@@ -57,27 +60,50 @@ static void start_webserver(void)
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "=== USB NCM Network Test ===");
+    ESP_LOGI(TAG, "=== USB CDC+NCM Composite Test ===");
 
     // Initialize event loop and network interface stack
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(esp_netif_init());
 
-    // Initialize USB NCM with default configuration
-    // This sets up TinyUSB, NCM device class, esp_netif, and DHCP server
+#ifdef CONFIG_ESP_CONSOLE_USB_CDC
+    // When CDC console is enabled, TinyUSB is already initialized by ESP-IDF
+    // We only need to add NCM to the existing USB stack
+    ESP_LOGI(TAG, "CDC console enabled - TinyUSB already initialized");
+
+    // Initialize NCM on existing TinyUSB stack (skip init_tinyusb)
+    ESP_ERROR_CHECK(usb_net_create(NULL));
+
+    // Create network interface with DHCP server
+    esp_netif_t *netif = netif_create(NULL, NULL, NULL);
+    if (netif == NULL) {
+        ESP_LOGE(TAG, "Failed to create network interface");
+        return;
+    }
+    esp_netif_action_start(netif, 0, 0, 0);
+
+    // Set MAC address
+    uint8_t mac[6];
+    ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_ETH));
+    ESP_ERROR_CHECK(esp_netif_set_mac(netif, mac));
+#else
+    // No CDC console - use full initialization
+    ESP_LOGI(TAG, "NCM only mode");
     esp_netif_t *netif = usb_ip_init_default_config();
     if (netif == NULL) {
         ESP_LOGE(TAG, "Failed to initialize USB network interface");
         return;
     }
+#endif
 
     // Start web server
     start_webserver();
 
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "USB NCM initialized!");
-    ESP_LOGI(TAG, "Connect USB-OTG port to host PC");
-    ESP_LOGI(TAG, "On Linux: sudo dhclient <interface>");
-    ESP_LOGI(TAG, "Then open: http://192.168.4.1/");
+    ESP_LOGI(TAG, "USB Composite Device initialized!");
+#ifdef CONFIG_ESP_CONSOLE_USB_CDC
+    ESP_LOGI(TAG, "CDC: Serial console on /dev/ttyACM0");
+#endif
+    ESP_LOGI(TAG, "NCM: http://192.168.4.1/");
     ESP_LOGI(TAG, "========================================");
 }
