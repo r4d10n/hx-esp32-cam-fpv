@@ -20,4 +20,9 @@ idf_component_register(
         esp_http_server
         esp_netif
         esp_timer
+        usb
+        freertos
 )
+
+# UVC-only builds use usb_device_uvc component which handles TinyUSB internally
+# No additional include paths needed

@@ -1,8 +1,13 @@
 /**
  * ESP32 FPV Ground Station - USB Device Manager Implementation
  *
- * Manages USB composite device initialization and runtime mode switching
+ * Manages USB device initialization and runtime mode switching
  * between NCM (network) and UVC (video) streaming.
+ *
+ * Build modes:
+ * - USB_NET + USB_UVC: Full composite with CDC+NCM+UVC (requires esp_tinyusb)
+ * - USB_NET only: CDC+NCM networking (requires esp_tinyusb)
+ * - USB_UVC only: Standalone UVC webcam (uses usb_device_uvc only)
  */
 
 #include "sdkconfig.h"
@@ -18,13 +23,20 @@
 #include <stdarg.h>
 #include "esp_log.h"
 #include "esp_mac.h"
+
+// USB NET mode requires esp_tinyusb for CDC+NCM composite
+#ifdef CONFIG_FPV_GS_ENABLE_USB_NET
 #include "tinyusb.h"
 #include "tusb_cdc_acm.h"
-
-#ifdef CONFIG_FPV_GS_ENABLE_USB_NET
 #include "esp_netif.h"
 #include "usb_netif.h"
 #include "tinyusb_net.h"
+#define HAVE_CDC_ACM 1
+#define HAVE_TUD_CONNECTED 1
+#else
+// UVC-only mode - usb_device_uvc handles TinyUSB internally
+#define HAVE_CDC_ACM 0
+#define HAVE_TUD_CONNECTED 0
 #endif
 
 static const char *TAG = "usb_dev";
@@ -34,8 +46,10 @@ static usb_mode_t s_current_mode = USB_MODE_NONE;
 static bool s_initialized = false;
 static bool s_started = false;
 
+#if HAVE_CDC_ACM
 // CDC state
 static volatile bool s_cdc_connected = false;
+#endif
 
 #ifdef CONFIG_FPV_GS_ENABLE_USB_NET
 // NCM state
@@ -43,7 +57,6 @@ static esp_netif_t *s_usb_netif = NULL;
 static char s_ip_str[16] = "192.168.7.1";
 static char s_client_ip_str[16] = "none";
 extern esp_netif_t *usb_netif_p;  // From usb-netif component
-#endif
 
 // CDC ACM callback for line state changes
 static void cdc_line_state_callback(int itf, cdcacm_event_t *event)
@@ -54,7 +67,6 @@ static void cdc_line_state_callback(int itf, cdcacm_event_t *event)
     ESP_LOGI(TAG, "CDC line state: DTR=%d, RTS=%d", dtr, rts);
 }
 
-#ifdef CONFIG_FPV_GS_ENABLE_USB_NET
 // NCM receive callback - forward to netif
 static esp_err_t ncm_recv_callback(void *buffer, uint16_t len, void *ctx)
 {
@@ -76,14 +88,15 @@ esp_err_t usb_device_init(void)
 
     ESP_LOGI(TAG, "Initializing USB Device Manager");
 
-    // Step 1: Install TinyUSB driver
+#ifdef CONFIG_FPV_GS_ENABLE_USB_NET
+    // Full mode with esp_tinyusb: Install TinyUSB driver for CDC+NCM composite
     const tinyusb_config_t tusb_cfg = {
         .external_phy = false,
     };
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
     ESP_LOGI(TAG, "TinyUSB driver installed");
 
-    // Step 2: Initialize CDC ACM (always available for status output)
+    // Initialize CDC ACM (for status output)
     tinyusb_config_cdcacm_t acm_cfg = {
         .usb_dev = TINYUSB_USBDEV_0,
         .cdc_port = TINYUSB_CDC_ACM_0,
@@ -96,8 +109,7 @@ esp_err_t usb_device_init(void)
     ESP_ERROR_CHECK(tusb_cdc_acm_init(&acm_cfg));
     ESP_LOGI(TAG, "CDC ACM initialized");
 
-#ifdef CONFIG_FPV_GS_ENABLE_USB_NET
-    // Step 3: Initialize NCM network
+    // Initialize NCM network
     uint8_t mac[6];
     ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_ETH));
     tinyusb_net_config_t net_cfg = {
@@ -128,7 +140,7 @@ esp_err_t usb_device_init(void)
 #endif
 
 #ifdef CONFIG_FPV_GS_ENABLE_USB_UVC
-    // Step 4: Initialize UVC
+    // Initialize UVC - this handles its own TinyUSB setup in UVC-only mode
     ESP_ERROR_CHECK(usb_uvc_init());
     ESP_LOGI(TAG, "UVC initialized");
 #endif
@@ -264,7 +276,16 @@ usb_mode_t usb_device_toggle_mode(void)
 
 bool usb_device_is_connected(void)
 {
+#if HAVE_TUD_CONNECTED
     return tud_connected();
+#else
+    // In UVC-only mode, check if UVC host is streaming
+#ifdef CONFIG_FPV_GS_ENABLE_USB_UVC
+    return usb_uvc_is_streaming();
+#else
+    return false;
+#endif
+#endif
 }
 
 const char *usb_device_mode_str(usb_mode_t mode)
@@ -309,6 +330,8 @@ bool usb_network_is_connected(void)
 }
 #endif
 
+// CDC write functions - only available when USB_NET is enabled (esp_tinyusb provides CDC)
+#if HAVE_CDC_ACM
 void usb_cdc_write(const char *data, size_t len)
 {
     if (tud_cdc_connected()) {
@@ -329,5 +352,18 @@ void usb_cdc_printf(const char *fmt, ...)
         usb_cdc_write(buf, len);
     }
 }
+#else
+// Stubs for UVC-only mode (no CDC support without esp_tinyusb)
+void usb_cdc_write(const char *data, size_t len)
+{
+    (void)data;
+    (void)len;
+}
+
+void usb_cdc_printf(const char *fmt, ...)
+{
+    (void)fmt;
+}
+#endif
 
 #endif // CONFIG_FPV_GS_ENABLE_USB_NET || CONFIG_FPV_GS_ENABLE_USB_UVC

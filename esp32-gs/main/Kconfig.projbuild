@@ -138,6 +138,11 @@ menu "ESP32 FPV Ground Station Configuration"
                 but may have compatibility issues on some Linux systems.
                 Default (isochronous) is recommended for better compatibility.
 
+                IMPORTANT: This option alone is not sufficient. You must also set
+                CONFIG_UVC_CAM1_XFER_MODE=1 in sdkconfig.defaults for bulk mode.
+                Use the provided sdkconfig.defaults.bulk file for bulk mode builds:
+                  cp sdkconfig.defaults.bulk sdkconfig.defaults && idf.py build
+
         config FPV_GS_UVC_DEFAULT_ACTIVE
             bool "UVC active by default (NCM inactive)"
             default n

@@ -3,6 +3,9 @@
  *
  * Implements USB Video Class device functionality for streaming
  * MJPEG frames from the FPV receiver to host applications.
+ *
+ * Uses the usb_device_uvc component which provides a callback-based
+ * pull model where the host requests frames via fb_get_cb.
  */
 
 #include "sdkconfig.h"
@@ -15,162 +18,133 @@
 #include <string.h>
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-#include "tusb.h"
+
+// Use usb_device_uvc component API
 #include "usb_device_uvc.h"
 
 static const char *TAG = "usb_uvc";
-
-// UVC streaming task
-#define UVC_TASK_STACK_SIZE     4096
-#define UVC_TASK_PRIORITY       5
-
-// Frame timing
-#define UVC_FRAME_INTERVAL_US   (1000000 / CONFIG_FPV_GS_UVC_FPS)
-#define UVC_MIN_FRAME_INTERVAL  16666   // ~60fps max
 
 // State
 static usb_uvc_state_t s_state = UVC_STATE_IDLE;
 static usb_uvc_config_t s_config = {0};
 static usb_uvc_stats_t s_stats = {0};
-static TaskHandle_t s_uvc_task = NULL;
 static SemaphoreHandle_t s_mutex = NULL;
-static volatile bool s_streaming_active = false;
 static volatile bool s_host_streaming = false;
-static volatile bool s_task_running = false;
 
-// Frame transfer state
-static volatile bool s_frame_in_progress = false;
-static uint8_t *s_frame_buffer = NULL;
-static size_t s_frame_buffer_size = 0;
+// UVC frame buffer for transfers
+static uint8_t *s_uvc_buffer = NULL;
+static size_t s_uvc_buffer_size = 0;
 
-/**
- * UVC frame transfer complete callback
- * Called by TinyUSB when a frame transfer completes
- */
-void tud_video_frame_xfer_complete_cb(uint_fast8_t ctl_idx, uint_fast8_t stm_idx)
-{
-    (void)ctl_idx;
-    (void)stm_idx;
-    s_frame_in_progress = false;
-}
+// Current frame being served to host
+static uvc_fb_t s_current_fb = {0};
+static volatile bool s_frame_valid = false;
 
 /**
- * UVC streaming control callback
- * Called when host starts/stops streaming
+ * UVC start callback - called when host opens UVC device
  */
-static int uvc_on_streaming_ctrl(uint8_t ctl_idx, uint8_t stm_idx,
-                                  const uvc_streaming_ctrl_t *ctrl,
-                                  bool start)
+static esp_err_t uvc_on_start(uvc_format_t format, int width, int height, int rate, void *cb_ctx)
 {
-    (void)ctl_idx;
-    (void)stm_idx;
-    (void)ctrl;
+    (void)cb_ctx;
 
-    s_host_streaming = start;
+    ESP_LOGI(TAG, "Host started UVC: format=%d, %dx%d @ %d fps",
+             format, width, height, rate);
 
-    if (start) {
-        ESP_LOGI(TAG, "Host started UVC streaming");
-    } else {
-        ESP_LOGI(TAG, "Host stopped UVC streaming");
+    s_host_streaming = true;
+
+    if (s_state == UVC_STATE_STREAMING || s_state == UVC_STATE_SUSPENDED) {
+        // Update stats
+        s_stats.frames_sent = 0;
+        s_stats.frames_dropped = 0;
+        s_stats.bytes_sent = 0;
     }
 
-    return 0;
+    return ESP_OK;
 }
 
 /**
- * UVC streaming task
- * Monitors frame buffer and sends complete frames to USB host
+ * UVC stop callback - called when host closes UVC device
  */
-static void uvc_streaming_task(void *arg)
+static void uvc_on_stop(void *cb_ctx)
 {
-    (void)arg;
+    (void)cb_ctx;
 
-    int64_t last_frame_time = 0;
-    int64_t frame_interval = UVC_FRAME_INTERVAL_US;
+    ESP_LOGI(TAG, "Host stopped UVC streaming");
+    s_host_streaming = false;
+    s_frame_valid = false;
+}
 
-    ESP_LOGI(TAG, "UVC streaming task started");
-    s_task_running = true;
+/**
+ * UVC frame get callback - called when host requests a new frame
+ * Returns a frame buffer structure or NULL if no frame available
+ */
+static uvc_fb_t* uvc_on_fb_get(void *cb_ctx)
+{
+    (void)cb_ctx;
 
-    while (s_task_running) {
-        // Check if we should be streaming
-        if (s_state != UVC_STATE_STREAMING || !s_host_streaming) {
-            vTaskDelay(pdMS_TO_TICKS(50));
-            continue;
-        }
+    // Check if we're supposed to be streaming
+    if (s_state != UVC_STATE_STREAMING || !s_host_streaming) {
+        return NULL;
+    }
 
-        // Check if previous frame transfer is complete
-        if (s_frame_in_progress) {
-            vTaskDelay(pdMS_TO_TICKS(1));
-            continue;
-        }
+    // Check for new frame in frame buffer
+    if (!frame_buffer_has_new_frame()) {
+        return NULL;
+    }
 
-        // Rate limiting - wait for frame interval
-        int64_t now = esp_timer_get_time();
-        int64_t elapsed = now - last_frame_time;
-        if (elapsed < frame_interval) {
-            int64_t wait_us = frame_interval - elapsed;
-            if (wait_us > 1000) {
-                vTaskDelay(pdMS_TO_TICKS(wait_us / 1000));
-            }
-            continue;
-        }
+    frame_info_t *frame = frame_buffer_get_latest();
+    if (frame == NULL || !frame->valid || frame->size == 0) {
+        if (frame) frame_buffer_release(frame);
+        return NULL;
+    }
 
-        // Try to get a new frame
-        if (!frame_buffer_has_new_frame()) {
-            vTaskDelay(pdMS_TO_TICKS(5));
-            continue;
-        }
-
-        frame_info_t *frame = frame_buffer_get_latest();
-        if (frame == NULL || !frame->valid || frame->size == 0) {
-            if (frame) frame_buffer_release(frame);
-            vTaskDelay(pdMS_TO_TICKS(5));
-            continue;
-        }
-
-        // Check if TinyUSB video is ready
-        if (!tud_video_n_streaming(0, 0)) {
-            frame_buffer_release(frame);
-            vTaskDelay(pdMS_TO_TICKS(10));
-            continue;
-        }
-
-        // Copy frame data (frame buffer may be reused)
-        if (frame->size > s_frame_buffer_size) {
-            ESP_LOGW(TAG, "Frame too large: %u > %u",
-                     (unsigned)frame->size, (unsigned)s_frame_buffer_size);
-            s_stats.frames_dropped++;
-            frame_buffer_release(frame);
-            continue;
-        }
-
-        memcpy(s_frame_buffer, frame->data, frame->size);
-        size_t frame_size = frame->size;
+    // Check frame size
+    if (frame->size > s_uvc_buffer_size) {
+        ESP_LOGW(TAG, "Frame too large: %u > %u",
+                 (unsigned)frame->size, (unsigned)s_uvc_buffer_size);
+        s_stats.frames_dropped++;
         frame_buffer_release(frame);
-
-        // Submit frame to UVC
-        s_frame_in_progress = true;
-        bool success = tud_video_n_frame_xfer(0, 0, s_frame_buffer, frame_size);
-
-        if (success) {
-            last_frame_time = esp_timer_get_time();
-            s_stats.frames_sent++;
-            s_stats.bytes_sent += frame_size;
-            s_stats.last_frame_size = frame_size;
-            s_stats.last_frame_time = last_frame_time;
-        } else {
-            s_frame_in_progress = false;
-            s_stats.frames_dropped++;
-            ESP_LOGD(TAG, "Frame transfer failed");
-        }
+        return NULL;
     }
 
-    ESP_LOGI(TAG, "UVC streaming task exiting");
-    s_uvc_task = NULL;
-    vTaskDelete(NULL);
+    // Copy frame data to UVC buffer
+    memcpy(s_uvc_buffer, frame->data, frame->size);
+
+    // Setup the frame buffer structure
+    s_current_fb.buf = s_uvc_buffer;
+    s_current_fb.len = frame->size;
+    s_current_fb.width = s_config.width;
+    s_current_fb.height = s_config.height;
+    s_current_fb.format = UVC_FORMAT_JPEG;
+    gettimeofday(&s_current_fb.timestamp, NULL);
+
+    // Release source frame
+    frame_buffer_release(frame);
+
+    s_frame_valid = true;
+
+    return &s_current_fb;
+}
+
+/**
+ * UVC frame return callback - called when frame is no longer needed
+ */
+static void uvc_on_fb_return(uvc_fb_t *fb, void *cb_ctx)
+{
+    (void)cb_ctx;
+
+    if (fb == &s_current_fb && s_frame_valid) {
+        // Update statistics
+        s_stats.frames_sent++;
+        s_stats.bytes_sent += fb->len;
+        s_stats.last_frame_size = fb->len;
+        s_stats.last_frame_time = esp_timer_get_time();
+
+        s_frame_valid = false;
+    }
 }
 
 esp_err_t usb_uvc_init(void)
@@ -194,17 +168,17 @@ esp_err_t usb_uvc_init(void)
     s_config.bulk_mode = false;
 #endif
 
-    // Allocate frame buffer for UVC transfers
+    // Allocate UVC transfer buffer
     // Use PSRAM if available, otherwise internal RAM
-    s_frame_buffer_size = CONFIG_FPV_GS_MAX_FRAME_SIZE;
-    s_frame_buffer = heap_caps_malloc(s_frame_buffer_size,
-                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (s_frame_buffer == NULL) {
-        s_frame_buffer = heap_caps_malloc(s_frame_buffer_size,
-                                           MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    s_uvc_buffer_size = CONFIG_FPV_GS_MAX_FRAME_SIZE;
+    s_uvc_buffer = heap_caps_malloc(s_uvc_buffer_size,
+                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (s_uvc_buffer == NULL) {
+        s_uvc_buffer = heap_caps_malloc(s_uvc_buffer_size,
+                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
-    if (s_frame_buffer == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate UVC frame buffer");
+    if (s_uvc_buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate UVC transfer buffer");
         return ESP_ERR_NO_MEM;
     }
 
@@ -212,18 +186,27 @@ esp_err_t usb_uvc_init(void)
              s_config.width, s_config.height, s_config.fps,
              s_config.bulk_mode ? "bulk" : "isochronous");
 
-    // Configure UVC device
+    // Configure UVC device with callbacks
     uvc_device_config_t uvc_config = {
-        .uvc_buffer_size = s_frame_buffer_size,
-        .uvc_buffer = NULL,  // Let driver allocate
-        .start_cb = uvc_on_streaming_ctrl,
-        .fb_get_cb = NULL,   // We push frames, not pull
-        .fb_return_cb = NULL,
+        .uvc_buffer = s_uvc_buffer,
+        .uvc_buffer_size = s_uvc_buffer_size,
+        .start_cb = uvc_on_start,
+        .fb_get_cb = uvc_on_fb_get,
+        .fb_return_cb = uvc_on_fb_return,
+        .stop_cb = uvc_on_stop,
+        .cb_ctx = NULL,
     };
 
     esp_err_t ret = uvc_device_config(0, &uvc_config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to configure UVC device: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Initialize the UVC device (makes it visible to host)
+    ret = uvc_device_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init UVC device: %s", esp_err_to_name(ret));
         return ret;
     }
 
@@ -242,27 +225,9 @@ esp_err_t usb_uvc_start(void)
 
     ESP_LOGI(TAG, "Starting UVC streaming");
 
-    // Create streaming task if not already running
-    if (s_uvc_task == NULL) {
-        BaseType_t ret = xTaskCreate(
-            uvc_streaming_task,
-            "uvc_stream",
-            UVC_TASK_STACK_SIZE,
-            NULL,
-            UVC_TASK_PRIORITY,
-            &s_uvc_task
-        );
-
-        if (ret != pdPASS) {
-            ESP_LOGE(TAG, "Failed to create UVC streaming task");
-            return ESP_ERR_NO_MEM;
-        }
-    }
-
     s_state = UVC_STATE_STREAMING;
-    s_streaming_active = true;
 
-    ESP_LOGI(TAG, "UVC streaming started");
+    ESP_LOGI(TAG, "UVC streaming started - waiting for host connection");
     return ESP_OK;
 }
 
@@ -274,15 +239,8 @@ void usb_uvc_stop(void)
 
     ESP_LOGI(TAG, "Stopping UVC streaming");
 
-    s_streaming_active = false;
     s_state = UVC_STATE_IDLE;
-
-    // Wait for any in-progress transfer to complete
-    int timeout = 100;
-    while (s_frame_in_progress && timeout > 0) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-        timeout--;
-    }
+    s_frame_valid = false;
 
     ESP_LOGI(TAG, "UVC streaming stopped");
 }
@@ -295,15 +253,8 @@ void usb_uvc_suspend(void)
 
     ESP_LOGI(TAG, "Suspending UVC (NCM active)");
 
-    s_streaming_active = false;
     s_state = UVC_STATE_SUSPENDED;
-
-    // Wait for any in-progress transfer
-    int timeout = 100;
-    while (s_frame_in_progress && timeout > 0) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-        timeout--;
-    }
+    s_frame_valid = false;
 }
 
 void usb_uvc_resume(void)
@@ -315,7 +266,6 @@ void usb_uvc_resume(void)
     ESP_LOGI(TAG, "Resuming UVC streaming");
 
     s_state = UVC_STATE_STREAMING;
-    s_streaming_active = true;
 }
 
 usb_uvc_state_t usb_uvc_get_state(void)

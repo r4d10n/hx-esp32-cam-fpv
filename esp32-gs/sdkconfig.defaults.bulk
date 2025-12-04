@@ -1,0 +1,9 @@
+# ESP32 FPV Ground Station SDK Configuration - Bulk Transfer Mode
+# This file extends sdkconfig.defaults for bulk transfer mode
+# Usage: cat sdkconfig.defaults.bulk >> sdkconfig.defaults && idf.py fullclean build
+
+# Override UVC transfer mode to Bulk (higher throughput, Linux compatibility issues)
+# Comment out the isochronous setting first and set bulk:
+# CONFIG_UVC_MODE_ISOC_CAM1 is not set
+CONFIG_UVC_MODE_BULK_CAM1=y
+CONFIG_FPV_GS_UVC_BULK_MODE=y
