@@ -10,9 +10,9 @@ static const char *TAG = "frame_buf";
 
 #define FRAME_BUFFER_COUNT CONFIG_FPV_GS_FRAME_BUFFER_COUNT
 #define MAX_FRAME_SIZE_CONFIG CONFIG_FPV_GS_MAX_FRAME_SIZE
-#define MIN_FRAME_SIZE 32768      // 32KB minimum
+#define MIN_FRAME_SIZE 24576      // 24KB minimum (reduced for tight memory)
 #define MAX_FRAME_SIZE_CAP 131072 // 128KB maximum per buffer
-#define RESERVED_RAM 40960        // 40KB reserve for WiFi/TCP stack
+#define RESERVED_RAM 90000        // 90KB reserve for WiFi/TCP stack
 #define MAX_PARTS 128  // Maximum parts per frame
 #define FRAME_TIMEOUT_US (100 * 1000)  // 100ms timeout for incomplete frames
 
