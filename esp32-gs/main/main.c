@@ -2,13 +2,14 @@
  * ESP32 FPV Ground Station
  *
  * Captures FPV video packets in promiscuous mode while serving
- * a web interface via USB network (NCM/RNDIS) or WiFi SoftAP.
+ * a web interface via USB network (NCM/RNDIS) and/or WiFi SoftAP.
  *
  * Features:
+ * - Promiscuous mode packet capture (always enabled)
  * - USB network interface (NCM/RNDIS) for tethered operation
- * - Optional WiFi AP + promiscuous mode for packet capture
+ * - Optional WiFi AP for wireless web interface access
  * - WebSocket MJPEG streaming to browser clients
- * - On-the-fly channel switching (when WiFi enabled)
+ * - On-the-fly channel switching
  * - Configuration via web interface
  */
 
@@ -16,12 +17,9 @@
 #include "config_manager.h"
 #include "frame_buffer.h"
 #include "web_server.h"
-#include "usb_network.h"
-
-#ifdef CONFIG_FPV_GS_ENABLE_WIFI
 #include "wifi_manager.h"
 #include "packet_rx.h"
-#endif
+#include "usb_network.h"
 
 static const char *TAG = "main";
 
@@ -45,20 +43,20 @@ void app_main(void)
 #ifdef CONFIG_FPV_GS_ENABLE_USB_NET
     ESP_LOGI(TAG, "Mode: USB Network enabled");
 #endif
-#ifdef CONFIG_FPV_GS_ENABLE_WIFI
-    ESP_LOGI(TAG, "Mode: WiFi enabled (SSID=%s)", g_config.ap_ssid);
+#ifdef CONFIG_FPV_GS_ENABLE_WIFI_AP
+    ESP_LOGI(TAG, "Mode: WiFi AP enabled (SSID=%s)", g_config.ap_ssid);
+#else
+    ESP_LOGI(TAG, "Mode: WiFi AP disabled (promiscuous only)");
 #endif
 
     // Initialize frame buffer
     ESP_ERROR_CHECK(frame_buffer_init());
 
-#ifdef CONFIG_FPV_GS_ENABLE_WIFI
-    // Initialize packet RX (only needed with WiFi for promiscuous capture)
+    // Initialize packet RX (always needed for promiscuous capture)
     ESP_ERROR_CHECK(packet_rx_init());
 
-    // Initialize WiFi
+    // Initialize WiFi (always needed for promiscuous mode)
     ESP_ERROR_CHECK(wifi_manager_init());
-#endif
 
 #ifdef CONFIG_FPV_GS_ENABLE_USB_NET
     // Initialize USB network
@@ -68,13 +66,11 @@ void app_main(void)
     // Initialize web server (works with any network interface)
     ESP_ERROR_CHECK(web_server_init());
 
-#ifdef CONFIG_FPV_GS_ENABLE_WIFI
-    // Start WiFi (AP + promiscuous)
+    // Start WiFi (promiscuous mode, optionally with AP)
     ESP_ERROR_CHECK(wifi_manager_start());
 
     // Start packet processing
     ESP_ERROR_CHECK(packet_rx_start());
-#endif
 
 #ifdef CONFIG_FPV_GS_ENABLE_USB_NET
     // Start USB network
@@ -90,18 +86,17 @@ void app_main(void)
 #ifdef CONFIG_FPV_GS_ENABLE_USB_NET
     ESP_LOGI(TAG, "  USB Network: http://%s/", usb_network_get_ip());
 #endif
-#ifdef CONFIG_FPV_GS_ENABLE_WIFI
-    ESP_LOGI(TAG, "  WiFi: %s (no password)", g_config.ap_ssid);
+#ifdef CONFIG_FPV_GS_ENABLE_WIFI_AP
+    ESP_LOGI(TAG, "  WiFi: %s (open)", g_config.ap_ssid);
     ESP_LOGI(TAG, "  WiFi URL: http://192.168.4.1/");
-    ESP_LOGI(TAG, "  Channel: %d", g_config.channel);
 #endif
+    ESP_LOGI(TAG, "  Capture Channel: %d", g_config.channel);
     ESP_LOGI(TAG, "========================================");
 
     // Main loop - print stats periodically
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(5000));
 
-#ifdef CONFIG_FPV_GS_ENABLE_WIFI
         ESP_LOGI(TAG, "Stats: pkts=%lu valid=%lu frames=%lu incomplete=%lu rssi=%d clients=%lu",
                  (unsigned long)g_stats.packets_received,
                  (unsigned long)g_stats.packets_valid,
@@ -109,12 +104,5 @@ void app_main(void)
                  (unsigned long)g_stats.frames_incomplete,
                  g_stats.rssi_dbm,
                  (unsigned long)g_stats.websocket_clients);
-#else
-        ESP_LOGI(TAG, "Stats: frames=%lu incomplete=%lu clients=%lu usb=%s",
-                 (unsigned long)g_stats.frames_complete,
-                 (unsigned long)g_stats.frames_incomplete,
-                 (unsigned long)g_stats.websocket_clients,
-                 usb_network_is_connected() ? "connected" : "waiting");
-#endif
     }
 }

@@ -74,11 +74,12 @@ menu "ESP32 FPV Ground Station Configuration"
                 Enable USB networking using NCM/RNDIS protocol.
                 The device appears as a USB network adapter on the host PC.
 
-        config FPV_GS_ENABLE_WIFI
-            bool "Enable WiFi (AP + Promiscuous)"
+        config FPV_GS_ENABLE_WIFI_AP
+            bool "Enable WiFi Access Point"
             default n
             help
-                Enable WiFi access point and promiscuous mode for packet capture.
+                Enable WiFi access point for wireless web interface access.
+                Promiscuous packet capture is always enabled regardless.
                 Disable to save memory when using USB-only mode.
 
         config FPV_GS_USB_NET_IP

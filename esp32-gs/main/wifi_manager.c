@@ -1,5 +1,8 @@
 /**
  * ESP32 FPV Ground Station - WiFi Manager
+ *
+ * Handles WiFi promiscuous mode for packet capture.
+ * Optionally provides WiFi AP for web interface access.
  */
 
 #include "wifi_manager.h"
@@ -12,8 +15,10 @@
 
 static const char *TAG = "wifi_mgr";
 
+#ifdef CONFIG_FPV_GS_ENABLE_WIFI_AP
 static esp_netif_t *s_ap_netif = NULL;
 static uint8_t s_station_count = 0;
+#endif
 
 // Promiscuous mode callback - forward to packet_rx module
 static void IRAM_ATTR wifi_promiscuous_cb(void *buf, wifi_promiscuous_pkt_type_t type)
@@ -28,7 +33,8 @@ static void IRAM_ATTR wifi_promiscuous_cb(void *buf, wifi_promiscuous_pkt_type_t
     packet_rx_handle(pkt->payload, pkt->rx_ctrl.sig_len, pkt->rx_ctrl.rssi);
 }
 
-// WiFi event handler
+#ifdef CONFIG_FPV_GS_ENABLE_WIFI_AP
+// WiFi event handler (only needed for AP mode)
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
@@ -47,7 +53,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             case WIFI_EVENT_AP_STACONNECTED: {
                 wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *)event_data;
                 s_station_count++;
-                g_stats.websocket_clients = s_station_count;
                 ESP_LOGI(TAG, "Station %02x:%02x:%02x:%02x:%02x:%02x connected, total=%u",
                          (unsigned)event->mac[0], (unsigned)event->mac[1],
                          (unsigned)event->mac[2], (unsigned)event->mac[3],
@@ -59,7 +64,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             case WIFI_EVENT_AP_STADISCONNECTED: {
                 wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *)event_data;
                 if (s_station_count > 0) s_station_count--;
-                g_stats.websocket_clients = s_station_count;
                 ESP_LOGI(TAG, "Station %02x:%02x:%02x:%02x:%02x:%02x disconnected, total=%u",
                          (unsigned)event->mac[0], (unsigned)event->mac[1],
                          (unsigned)event->mac[2], (unsigned)event->mac[3],
@@ -73,6 +77,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         }
     }
 }
+#endif
 
 esp_err_t wifi_manager_init(void)
 {
@@ -84,9 +89,11 @@ esp_err_t wifi_manager_init(void)
     // Create default event loop
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // Create AP network interface
+#ifdef CONFIG_FPV_GS_ENABLE_WIFI_AP
+    // Create AP network interface (only when AP is enabled)
     s_ap_netif = esp_netif_create_default_wifi_ap();
     assert(s_ap_netif);
+#endif
 
     // Initialize WiFi with default config
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -98,7 +105,8 @@ esp_err_t wifi_manager_init(void)
         return ret;
     }
 
-    // Register event handlers
+#ifdef CONFIG_FPV_GS_ENABLE_WIFI_AP
+    // Register event handlers (only for AP mode)
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
         WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
 
@@ -120,9 +128,15 @@ esp_err_t wifi_manager_init(void)
     // Set SSID
     strncpy((char *)ap_config.ap.ssid, g_config.ap_ssid, sizeof(ap_config.ap.ssid));
     ap_config.ap.ssid_len = strlen(g_config.ap_ssid);
-    // Password not used for open network
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+
+    ESP_LOGI(TAG, "WiFi initialized: AP SSID=%s, CH=%d", g_config.ap_ssid, g_config.channel);
+#else
+    // Promiscuous-only mode: use NULL mode (no AP, no STA)
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
+    ESP_LOGI(TAG, "WiFi initialized: promiscuous-only mode, CH=%d", g_config.channel);
+#endif
 
     // Set country for proper channel support
     wifi_country_t country = {
@@ -132,8 +146,6 @@ esp_err_t wifi_manager_init(void)
         .policy = WIFI_COUNTRY_POLICY_AUTO,
     };
     esp_wifi_set_country(&country);
-
-    ESP_LOGI(TAG, "WiFi initialized: SSID=%s, CH=%d", g_config.ap_ssid, g_config.channel);
 
     return ESP_OK;
 }
@@ -149,8 +161,8 @@ esp_err_t wifi_manager_start(void)
         return ret;
     }
 
-    // Set channel explicitly (AP config might not apply immediately)
-    ret = wifi_set_channel(g_config.channel);
+    // Set channel explicitly
+    ret = esp_wifi_set_channel(g_config.channel, WIFI_SECOND_CHAN_NONE);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "Failed to set channel: %s", esp_err_to_name(ret));
     }
@@ -163,7 +175,7 @@ esp_err_t wifi_manager_start(void)
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous_rx_cb(&wifi_promiscuous_cb));
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
 
-    ESP_LOGI(TAG, "WiFi started with promiscuous mode enabled");
+    ESP_LOGI(TAG, "WiFi started with promiscuous mode on channel %d", g_config.channel);
 
     g_stats.channel = g_config.channel;
 
@@ -182,7 +194,8 @@ esp_err_t wifi_set_channel(uint8_t channel)
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Try simple channel change first
+#ifdef CONFIG_FPV_GS_ENABLE_WIFI_AP
+    // With AP enabled, we may need to restart to change channel
     esp_err_t ret = esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
     if (ret == ESP_OK) {
         g_config.channel = channel;
@@ -203,7 +216,7 @@ esp_err_t wifi_set_channel(uint8_t channel)
     // Stop WiFi
     esp_wifi_stop();
 
-    // Update AP config with new channel - use open WiFi for best performance
+    // Update AP config with new channel
     wifi_config_t ap_config = {
         .ap = {
             .channel = channel,
@@ -221,7 +234,6 @@ esp_err_t wifi_set_channel(uint8_t channel)
     ret = esp_wifi_set_config(WIFI_IF_AP, &ap_config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set AP config: %s", esp_err_to_name(ret));
-        // Try to restart anyway
     }
 
     // Restart WiFi
@@ -238,11 +250,19 @@ esp_err_t wifi_set_channel(uint8_t channel)
     esp_wifi_set_promiscuous_filter(&filter);
     esp_wifi_set_promiscuous(true);
 
-    // Update config
+    ESP_LOGI(TAG, "AP restarted on channel %d", channel);
+#else
+    // Without AP, channel change is simple
+    esp_err_t ret = esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set channel: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "Channel set to %d", channel);
+#endif
+
     g_config.channel = channel;
     g_stats.channel = channel;
-
-    ESP_LOGI(TAG, "AP restarted on channel %d", channel);
 
     return ESP_OK;
 }
@@ -265,5 +285,9 @@ esp_err_t wifi_set_promiscuous(bool enable)
 
 uint8_t wifi_get_station_count(void)
 {
+#ifdef CONFIG_FPV_GS_ENABLE_WIFI_AP
     return s_station_count;
+#else
+    return 0;
+#endif
 }
