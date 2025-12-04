@@ -45,9 +45,32 @@ bool usb_network_is_connected(void);
 /**
  * Get USB network interface IP address string
  *
- * @return IP address string (e.g., "192.168.8.1")
+ * @return IP address string (e.g., "192.168.7.1")
  */
 const char *usb_network_get_ip(void);
+
+/**
+ * Get connected client's IP address (from DHCP)
+ *
+ * @return Client IP address string or "no client"
+ */
+const char *usb_network_get_client_ip(void);
+
+/**
+ * Write data to USB CDC ACM serial port
+ *
+ * @param data Data to write
+ * @param len Length of data
+ */
+void usb_cdc_write(const char *data, size_t len);
+
+/**
+ * Printf-style output to USB CDC ACM serial port
+ *
+ * @param fmt Format string
+ * @param ... Arguments
+ */
+void usb_cdc_printf(const char *fmt, ...);
 
 #else
 
@@ -57,6 +80,9 @@ static inline esp_err_t usb_network_start(void) { return ESP_OK; }
 static inline void usb_network_stop(void) {}
 static inline bool usb_network_is_connected(void) { return false; }
 static inline const char *usb_network_get_ip(void) { return "0.0.0.0"; }
+static inline const char *usb_network_get_client_ip(void) { return "disabled"; }
+static inline void usb_cdc_write(const char *data, size_t len) { (void)data; (void)len; }
+static inline void usb_cdc_printf(const char *fmt, ...) { (void)fmt; }
 
 #endif // CONFIG_FPV_GS_ENABLE_USB_NET
 

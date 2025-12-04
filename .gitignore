@@ -45,3 +45,14 @@ gs/gs.ini
 release
 components/build
 __pycache__/
+
+# ESP-IDF build artifacts
+**/build/
+**/managed_components/
+**/dependencies.lock
+**/sdkconfig
+**/sdkconfig.old
+
+# Test/debug files
+tools/frames/
+*.pcapng

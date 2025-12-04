@@ -66,44 +66,24 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(esp_netif_init());
 
-#ifdef CONFIG_ESP_CONSOLE_USB_CDC
-    // When CDC console is enabled, TinyUSB is already initialized by ESP-IDF
-    // We only need to add NCM to the existing USB stack
-    ESP_LOGI(TAG, "CDC console enabled - TinyUSB already initialized");
+    // Initialize USB CDC+NCM composite device via esp_tinyusb
+    // Console is on USB Serial JTAG (separate peripheral)
+    // USB OTG is used for CDC ACM + NCM composite
+    ESP_LOGI(TAG, "Initializing USB OTG with CDC+NCM composite...");
 
-    // Initialize NCM on existing TinyUSB stack (skip init_tinyusb)
-    ESP_ERROR_CHECK(usb_net_create(NULL));
-
-    // Create network interface with DHCP server
-    esp_netif_t *netif = netif_create(NULL, NULL, NULL);
-    if (netif == NULL) {
-        ESP_LOGE(TAG, "Failed to create network interface");
-        return;
-    }
-    esp_netif_action_start(netif, 0, 0, 0);
-
-    // Set MAC address
-    uint8_t mac[6];
-    ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_ETH));
-    ESP_ERROR_CHECK(esp_netif_set_mac(netif, mac));
-#else
-    // No CDC console - use full initialization
-    ESP_LOGI(TAG, "NCM only mode");
     esp_netif_t *netif = usb_ip_init_default_config();
     if (netif == NULL) {
         ESP_LOGE(TAG, "Failed to initialize USB network interface");
         return;
     }
-#endif
 
     // Start web server
     start_webserver();
 
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "USB Composite Device initialized!");
-#ifdef CONFIG_ESP_CONSOLE_USB_CDC
-    ESP_LOGI(TAG, "CDC: Serial console on /dev/ttyACM0");
-#endif
+    ESP_LOGI(TAG, "Console: USB Serial JTAG");
+    ESP_LOGI(TAG, "CDC ACM: /dev/ttyACMx (data port)");
     ESP_LOGI(TAG, "NCM: http://192.168.4.1/");
     ESP_LOGI(TAG, "========================================");
 }

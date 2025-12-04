@@ -3,10 +3,11 @@
 # Target ESP32-S3
 CONFIG_IDF_TARGET="esp32s3"
 
-# Console output via USB CDC (TinyUSB)
-CONFIG_ESP_CONSOLE_USB_CDC=y
+# Console output via USB Serial JTAG (separate peripheral, not USB OTG)
+# This frees USB OTG for esp_tinyusb CDC+NCM composite device
+CONFIG_ESP_CONSOLE_USB_CDC=n
 CONFIG_ESP_CONSOLE_UART_DEFAULT=n
-CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=n
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 
 # USB OTG Hardware Configuration

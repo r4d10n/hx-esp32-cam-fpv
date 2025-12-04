@@ -93,16 +93,36 @@ void app_main(void)
     ESP_LOGI(TAG, "  Capture Channel: %d", g_config.channel);
     ESP_LOGI(TAG, "========================================");
 
-    // Main loop - print stats periodically
+    // Main loop - print stats periodically (every 3 seconds)
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(3000));
 
-        ESP_LOGI(TAG, "Stats: pkts=%lu valid=%lu frames=%lu incomplete=%lu rssi=%d clients=%lu",
+        // Log to UART console
+        ESP_LOGI(TAG, "Stats: pkts=%lu valid=%lu frames=%lu incomplete=%lu rssi=%d ws_clients=%lu",
                  (unsigned long)g_stats.packets_received,
                  (unsigned long)g_stats.packets_valid,
                  (unsigned long)g_stats.frames_complete,
                  (unsigned long)g_stats.frames_incomplete,
                  g_stats.rssi_dbm,
                  (unsigned long)g_stats.websocket_clients);
+
+#ifdef CONFIG_FPV_GS_ENABLE_USB_NET
+        // Output to USB CDC serial with IP addresses
+        usb_cdc_printf("\r\n=== FPV Ground Station Stats ===\r\n");
+        usb_cdc_printf("ESP32 IP: %s | Client IP: %s\r\n",
+                       usb_network_get_ip(),
+                       usb_network_get_client_ip());
+        usb_cdc_printf("Channel: %d | RSSI: %d dBm\r\n",
+                       g_stats.channel,
+                       g_stats.rssi_dbm);
+        usb_cdc_printf("Packets: %lu recv, %lu valid\r\n",
+                       (unsigned long)g_stats.packets_received,
+                       (unsigned long)g_stats.packets_valid);
+        usb_cdc_printf("Frames: %lu complete, %lu incomplete\r\n",
+                       (unsigned long)g_stats.frames_complete,
+                       (unsigned long)g_stats.frames_incomplete);
+        usb_cdc_printf("WebSocket clients: %lu\r\n",
+                       (unsigned long)g_stats.websocket_clients);
+#endif
     }
 }
