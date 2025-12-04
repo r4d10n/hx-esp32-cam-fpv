@@ -3,10 +3,12 @@
 # Target ESP32-S3
 CONFIG_IDF_TARGET="esp32s3"
 
-# Console output via USB CDC (TinyUSB)
-CONFIG_ESP_CONSOLE_USB_CDC=y
-CONFIG_ESP_CONSOLE_UART_DEFAULT=n
+# Console: Use UART during boot, then redirect to USB CDC after TinyUSB init
+# Do NOT use CONFIG_ESP_CONSOLE_USB_CDC as it initializes TinyUSB too early
+# preventing NCM from being added to the composite device
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=n
+CONFIG_ESP_CONSOLE_USB_CDC=n
 CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 
 # USB OTG Hardware Configuration
