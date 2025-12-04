@@ -7,6 +7,8 @@ idf_component_register(
         "web_server.c"
         "config_manager.c"
         "usb_network.c"
+        "fec_decoder.c"
+        "packet_tx.c"
     INCLUDE_DIRS
         "."
     EMBED_FILES

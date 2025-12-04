@@ -2,70 +2,262 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ESP32 FPV Ground Station</title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-    <div id="container">
-        <!-- Video Display -->
-        <div id="video-container">
-            <img id="video" alt="FPV Stream">
-            <div id="no-signal">
-                <div class="spinner"></div>
-                <p>Waiting for video...</p>
+    <!-- Video Display -->
+    <div id="video-container">
+        <img id="video" alt="FPV Stream">
+        <div id="no-signal">
+            <div class="spinner"></div>
+            <p>Waiting for video...</p>
+        </div>
+
+        <!-- OSD Top Bar -->
+        <div id="osd-top" class="osd-bar">
+            <div class="osd-item" id="osd-connection">
+                <span id="connection-status">DISCONNECTED</span>
+            </div>
+            <div class="osd-item">
+                <span id="osd-rssi">-- dBm</span>
+            </div>
+            <div class="osd-item">
+                <span id="osd-temp">--C</span>
+            </div>
+            <div class="osd-item">
+                <span id="osd-latency">-- ms</span>
             </div>
         </div>
 
-        <!-- Stats Overlay -->
-        <div id="stats-overlay">
-            <div id="fps">0 FPS</div>
-            <div id="rssi">RSSI: -- dBm</div>
-            <div id="channel">CH: --</div>
+        <!-- OSD Bottom Bar -->
+        <div id="osd-bottom" class="osd-bar">
+            <div class="osd-item">
+                <span class="label">FPS</span>
+                <span id="osd-fps">--</span>
+            </div>
+            <div class="osd-item">
+                <span class="label">CH</span>
+                <span id="osd-channel">--</span>
+            </div>
+            <div class="osd-item">
+                <span class="label">RES</span>
+                <span id="osd-resolution">---</span>
+            </div>
+            <div class="osd-item">
+                <span class="label">Q</span>
+                <span id="osd-quality">--</span>
+            </div>
+            <div class="osd-item" id="osd-rec">
+                <span class="rec-dot"></span>
+                <span id="osd-rec-status">--</span>
+            </div>
+            <div class="osd-item">
+                <span class="label">FEC</span>
+                <span id="osd-fec">0/0</span>
+            </div>
         </div>
 
-        <!-- Control Panel (toggle) -->
-        <button id="settings-btn" onclick="toggleSettings()">⚙</button>
+        <!-- Toggle Buttons -->
+        <button id="btn-controls" class="toggle-btn" onclick="toggleControls()">CAM</button>
+        <button id="btn-stats" class="toggle-btn" onclick="toggleStats()">STATS</button>
+    </div>
 
-        <div id="settings-panel" class="hidden">
-            <h3>Settings</h3>
+    <!-- Camera Control Panel -->
+    <div id="control-panel" class="panel hidden">
+        <div class="panel-header">
+            <h2>Camera Controls</h2>
+            <button class="close-btn" onclick="toggleControls()">&times;</button>
+        </div>
+        <div class="panel-content">
+            <!-- Resolution & Quality -->
+            <div class="control-section">
+                <h3>Quick Settings</h3>
+                <div class="control-row">
+                    <label>Resolution</label>
+                    <select id="ctrl-resolution" onchange="setCamera('resolution', this.value)">
+                        <option value="0">QVGA 320x240</option>
+                        <option value="1">CIF 400x296</option>
+                        <option value="2">HVGA 480x320</option>
+                        <option value="3">VGA 640x480</option>
+                        <option value="4">VGA 640x360</option>
+                        <option value="5">SVGA 800x600</option>
+                        <option value="6">SVGA 800x456</option>
+                        <option value="7">XGA 1024x768</option>
+                        <option value="8">XGA 1024x576</option>
+                        <option value="9">SXGA 1280x960</option>
+                        <option value="10">HD 1280x720</option>
+                        <option value="11">UXGA 1600x1200</option>
+                    </select>
+                </div>
+                <div class="control-row">
+                    <label>FPS Limit</label>
+                    <input type="range" id="ctrl-fps" min="0" max="60" value="60"
+                           oninput="showValue(this,'fps-val')" onchange="setCamera('fps_limit', this.value)">
+                    <span class="val" id="fps-val">60</span>
+                </div>
+                <div class="control-row">
+                    <label>Quality (0=Auto)</label>
+                    <input type="range" id="ctrl-quality" min="0" max="63" value="0"
+                           oninput="showValue(this,'quality-val')" onchange="setCamera('quality', this.value)">
+                    <span class="val" id="quality-val">0</span>
+                </div>
+            </div>
 
-            <div class="setting-group">
-                <label>Channel</label>
-                <div class="channel-buttons">
+            <!-- Exposure -->
+            <div class="control-section">
+                <h3>Exposure</h3>
+                <div class="control-row toggle">
+                    <label>Auto Exposure</label>
+                    <input type="checkbox" id="ctrl-aec" checked onchange="setCamera('aec', this.checked);updateExposureUI()">
+                </div>
+                <div class="control-row toggle">
+                    <label>Night Mode</label>
+                    <input type="checkbox" id="ctrl-aec2" checked onchange="setCamera('aec2', this.checked)">
+                </div>
+                <div class="control-row" id="row-ae-level">
+                    <label>AE Level</label>
+                    <input type="range" id="ctrl-ae-level" min="-2" max="2" value="1"
+                           oninput="showValue(this,'ae-level-val')" onchange="setCamera('ae_level', this.value)">
+                    <span class="val" id="ae-level-val">1</span>
+                </div>
+                <div class="control-row hidden" id="row-aec-value">
+                    <label>Exposure (ISO)</label>
+                    <input type="range" id="ctrl-aec-value" min="0" max="1200" value="204"
+                           oninput="showValue(this,'aec-value-val')" onchange="setCamera('aec_value', this.value)">
+                    <span class="val" id="aec-value-val">204</span>
+                </div>
+            </div>
+
+            <!-- Gain -->
+            <div class="control-section">
+                <h3>Gain</h3>
+                <div class="control-row toggle">
+                    <label>Auto Gain</label>
+                    <input type="checkbox" id="ctrl-agc" checked onchange="setCamera('agc', this.checked);updateGainUI()">
+                </div>
+                <div class="control-row" id="row-gain-ceil">
+                    <label>Gain Ceiling</label>
+                    <select id="ctrl-gainceiling" onchange="setCamera('gainceiling', this.value)">
+                        <option value="0">2x</option>
+                        <option value="1">4x</option>
+                        <option value="2">8x</option>
+                        <option value="3">16x</option>
+                        <option value="4">32x</option>
+                        <option value="5">64x</option>
+                        <option value="6">128x</option>
+                    </select>
+                </div>
+                <div class="control-row hidden" id="row-agc-gain">
+                    <label>Manual Gain</label>
+                    <input type="range" id="ctrl-agc-gain" min="0" max="30" value="0"
+                           oninput="showValue(this,'agc-gain-val')" onchange="setCamera('agc_gain', this.value)">
+                    <span class="val" id="agc-gain-val">0</span>
+                </div>
+            </div>
+
+            <!-- Image -->
+            <div class="control-section">
+                <h3>Image</h3>
+                <div class="control-row">
+                    <label>Brightness</label>
+                    <input type="range" id="ctrl-brightness" min="-2" max="2" value="0"
+                           oninput="showValue(this,'brightness-val')" onchange="setCamera('brightness', this.value)">
+                    <span class="val" id="brightness-val">0</span>
+                </div>
+                <div class="control-row">
+                    <label>Contrast</label>
+                    <input type="range" id="ctrl-contrast" min="-2" max="2" value="0"
+                           oninput="showValue(this,'contrast-val')" onchange="setCamera('contrast', this.value)">
+                    <span class="val" id="contrast-val">0</span>
+                </div>
+                <div class="control-row">
+                    <label>Saturation</label>
+                    <input type="range" id="ctrl-saturation" min="-2" max="2" value="1"
+                           oninput="showValue(this,'saturation-val')" onchange="setCamera('saturation', this.value)">
+                    <span class="val" id="saturation-val">1</span>
+                </div>
+                <div class="control-row">
+                    <label>Sharpness</label>
+                    <input type="range" id="ctrl-sharpness" min="-2" max="3" value="0"
+                           oninput="showValue(this,'sharpness-val')" onchange="setCamera('sharpness', this.value)">
+                    <span class="val" id="sharpness-val">0</span>
+                </div>
+            </div>
+
+            <!-- Orientation -->
+            <div class="control-section">
+                <h3>Orientation</h3>
+                <div class="control-row toggle">
+                    <label>H-Mirror</label>
+                    <input type="checkbox" id="ctrl-hmirror" onchange="setCamera('hmirror', this.checked)">
+                </div>
+                <div class="control-row toggle">
+                    <label>V-Flip</label>
+                    <input type="checkbox" id="ctrl-vflip" onchange="setCamera('vflip', this.checked)">
+                </div>
+            </div>
+
+            <!-- WiFi -->
+            <div class="control-section">
+                <h3>WiFi Channel</h3>
+                <div class="channel-grid">
                     <button onclick="setChannel(1)">1</button>
                     <button onclick="setChannel(2)">2</button>
                     <button onclick="setChannel(3)">3</button>
                     <button onclick="setChannel(4)">4</button>
                     <button onclick="setChannel(5)">5</button>
                     <button onclick="setChannel(6)">6</button>
-                    <button onclick="setChannel(7)">7</button>
+                    <button onclick="setChannel(7)" class="active" id="ch-7">7</button>
                     <button onclick="setChannel(8)">8</button>
                     <button onclick="setChannel(9)">9</button>
                     <button onclick="setChannel(10)">10</button>
                     <button onclick="setChannel(11)">11</button>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <div class="setting-group">
-                <label>Statistics</label>
-                <div id="detailed-stats">
-                    <div>Packets: <span id="stat-packets">0</span></div>
-                    <div>Valid: <span id="stat-valid">0</span></div>
-                    <div>Frames: <span id="stat-frames">0</span></div>
-                    <div>Incomplete: <span id="stat-incomplete">0</span></div>
-                    <div>Clients: <span id="stat-clients">0</span></div>
-                </div>
+    <!-- Stats Panel -->
+    <div id="stats-panel" class="panel hidden">
+        <div class="panel-header">
+            <h2>Statistics</h2>
+            <button class="close-btn" onclick="toggleStats()">&times;</button>
+        </div>
+        <div class="panel-content">
+            <div class="stats-section">
+                <h3>Ground Station</h3>
+                <table class="stats-table">
+                    <tr><td>Packets RX:</td><td id="stat-pkts-rx">0</td></tr>
+                    <tr><td>Packets Valid:</td><td id="stat-pkts-valid">0</td></tr>
+                    <tr><td>Frames Complete:</td><td id="stat-frames-ok">0</td></tr>
+                    <tr><td>Frames Lost:</td><td id="stat-frames-lost">0</td></tr>
+                    <tr><td>WS Clients:</td><td id="stat-ws">0</td></tr>
+                </table>
             </div>
-
-            <div class="setting-group">
-                <label>AP Configuration</label>
-                <input type="text" id="ap-ssid" placeholder="SSID">
-                <input type="password" id="ap-pass" placeholder="Password">
-                <button onclick="saveApConfig()">Save (Restart Required)</button>
+            <div class="stats-section">
+                <h3>FEC Recovery</h3>
+                <table class="stats-table">
+                    <tr><td>Blocks Received:</td><td id="stat-fec-rx">0</td></tr>
+                    <tr><td>Blocks Complete:</td><td id="stat-fec-ok">0</td></tr>
+                    <tr><td>Blocks Recovered:</td><td id="stat-fec-rec">0</td></tr>
+                    <tr><td>Blocks Failed:</td><td id="stat-fec-fail">0</td></tr>
+                    <tr><td>Packets Recovered:</td><td id="stat-pkts-rec">0</td></tr>
+                </table>
             </div>
-
-            <button class="close-btn" onclick="toggleSettings()">Close</button>
+            <div class="stats-section">
+                <h3>Air Unit</h3>
+                <table class="stats-table">
+                    <tr><td>RSSI:</td><td id="stat-air-rssi">-- dBm</td></tr>
+                    <tr><td>Noise Floor:</td><td id="stat-air-noise">-- dBm</td></tr>
+                    <tr><td>Temperature:</td><td id="stat-air-temp">--C</td></tr>
+                    <tr><td>Capture FPS:</td><td id="stat-air-fps">--</td></tr>
+                    <tr><td>TX Rate:</td><td id="stat-air-tx">0 pkt/s</td></tr>
+                    <tr><td>RX Rate:</td><td id="stat-air-rx">0 pkt/s</td></tr>
+                    <tr><td>SD Card:</td><td id="stat-sd">--</td></tr>
+                </table>
+            </div>
         </div>
     </div>
 
