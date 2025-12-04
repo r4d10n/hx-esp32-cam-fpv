@@ -7,83 +7,67 @@
 #ifdef CONFIG_FPV_GS_ENABLE_USB_NET
 
 #include "usb_network.h"
+#include <stdbool.h>
+#include <string.h>
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_event.h"
+#include "esp_mac.h"
 #include "tinyusb.h"
 #include "tinyusb_net.h"
-#include "lwip/esp_netif_net_stack.h"
-#include "esp_mac.h"
 
 static const char *TAG = "usb_net";
 
 static esp_netif_t *s_usb_netif = NULL;
-static bool s_connected = false;
+static volatile bool s_connected = false;
 static char s_ip_str[16] = "0.0.0.0";
 
 // USB device MAC address (locally administered)
 static uint8_t s_mac_addr[6] = {0x02, 0x02, 0x84, 0x6A, 0x96, 0x01};
 
-// Receive callback from TinyUSB
-static esp_err_t usb_recv_callback(void *buffer, uint16_t len, void *ctx)
+// Receive callback from TinyUSB - called when packet received from host
+static void usb_recv_callback(void *buffer, uint16_t len, void *ctx)
 {
-    if (s_usb_netif) {
+    (void)ctx;
+    if (s_usb_netif && buffer && len > 0) {
         esp_netif_receive(s_usb_netif, buffer, len, NULL);
     }
-    return ESP_OK;
 }
 
-// Transmit function for lwIP
+// Transmit driver function for lwIP
 static esp_err_t usb_netif_transmit(void *h, void *buffer, size_t len)
 {
+    (void)h;
     if (tinyusb_net_send_sync(buffer, len, NULL, pdMS_TO_TICKS(100)) != ESP_OK) {
         return ESP_FAIL;
     }
     return ESP_OK;
 }
 
-// Free TX buffer (not needed for sync send)
-static void usb_netif_free_tx_buffer(void *h, void *buffer)
+// Free RX buffer callback
+static void usb_netif_free_rx_buffer(void *h, void *buffer)
 {
-    free(buffer);
+    (void)h;
+    (void)buffer;
+    // Buffer is managed by TinyUSB, no need to free
 }
 
-// Network interface driver
+// Network interface driver configuration
 static const esp_netif_driver_ifconfig_t s_driver_config = {
-    .handle = (void *)1,  // Dummy handle
+    .handle = (void *)1,  // Non-null handle
     .transmit = usb_netif_transmit,
-    .driver_free_rx_buffer = usb_netif_free_tx_buffer,
+    .driver_free_rx_buffer = usb_netif_free_rx_buffer,
 };
 
-// IP event handler
-static void ip_event_handler(void *arg, esp_event_base_t event_base,
-                             int32_t event_id, void *event_data)
+// Called when USB device is initialized
+static void usb_net_init_cb(void *ctx)
 {
-    if (event_base == IP_EVENT) {
-        if (event_id == IP_EVENT_ETH_GOT_IP || event_id == IP_EVENT_STA_GOT_IP) {
-            ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-            if (event->esp_netif == s_usb_netif) {
-                snprintf(s_ip_str, sizeof(s_ip_str), IPSTR, IP2STR(&event->ip_info.ip));
-                ESP_LOGI(TAG, "USB Network IP: %s", s_ip_str);
-            }
-        }
-    }
-}
+    (void)ctx;
+    ESP_LOGI(TAG, "USB network device initialized");
+    s_connected = true;
 
-// Connection state callback from TinyUSB
-static void usb_net_conn_state_cb(void *ctx, bool connected)
-{
-    s_connected = connected;
-    if (connected) {
-        ESP_LOGI(TAG, "USB Network connected to host");
-        if (s_usb_netif) {
-            esp_netif_action_start(s_usb_netif, NULL, 0, NULL);
-        }
-    } else {
-        ESP_LOGI(TAG, "USB Network disconnected from host");
-        if (s_usb_netif) {
-            esp_netif_action_stop(s_usb_netif, NULL, 0, NULL);
-        }
+    if (s_usb_netif) {
+        esp_netif_action_start(s_usb_netif, NULL, 0, NULL);
     }
 }
 
@@ -93,16 +77,19 @@ esp_err_t usb_network_init(void)
 
     ESP_LOGI(TAG, "Initializing USB network interface");
 
-    // Generate unique MAC from base MAC
-    esp_read_mac(s_mac_addr, ESP_MAC_ETH);
-    s_mac_addr[0] = 0x02;  // Locally administered
+    // Generate unique MAC from device base MAC
+    uint8_t base_mac[6];
+    esp_read_mac(base_mac, ESP_MAC_WIFI_STA);
+    memcpy(s_mac_addr, base_mac, 6);
+    s_mac_addr[0] = 0x02;  // Set locally administered bit
+    s_mac_addr[0] &= 0xFE; // Clear multicast bit
 
-    // Initialize TinyUSB
+    // Initialize TinyUSB driver
     const tinyusb_config_t tusb_cfg = {
         .device_descriptor = NULL,  // Use default
-        .string_descriptor = NULL,  // Use default from Kconfig
+        .string_descriptor = NULL,  // Use Kconfig strings
         .external_phy = false,
-        .configuration_descriptor = NULL,  // Use default
+        .configuration_descriptor = NULL,
     };
 
     ret = tinyusb_driver_install(&tusb_cfg);
@@ -111,13 +98,12 @@ esp_err_t usb_network_init(void)
         return ret;
     }
 
-    // Configure TinyUSB network
+    // Initialize TinyUSB network class
     const tinyusb_net_config_t net_cfg = {
-        .mac_addr = s_mac_addr,
+        .mac_addr = {s_mac_addr[0], s_mac_addr[1], s_mac_addr[2],
+                     s_mac_addr[3], s_mac_addr[4], s_mac_addr[5]},
         .on_recv_callback = usb_recv_callback,
-        .on_recv_callback_ctx = NULL,
-        .on_connected_callback = usb_net_conn_state_cb,
-        .on_connected_callback_ctx = NULL,
+        .on_init_callback = usb_net_init_cb,
     };
 
     ret = tinyusb_net_init(TINYUSB_USBDEV_0, &net_cfg);
@@ -126,10 +112,10 @@ esp_err_t usb_network_init(void)
         return ret;
     }
 
-    // Create network interface configuration
+    // Create network interface
     esp_netif_inherent_config_t base_cfg = ESP_NETIF_INHERENT_DEFAULT_ETH();
     base_cfg.if_desc = "usb_ncm";
-    base_cfg.route_prio = 50;  // Lower than WiFi
+    base_cfg.route_prio = 50;
 
     esp_netif_config_t netif_cfg = {
         .base = &base_cfg,
@@ -143,7 +129,10 @@ esp_err_t usb_network_init(void)
         return ESP_FAIL;
     }
 
-    // Set static IP
+    // Set MAC address
+    esp_netif_set_mac(s_usb_netif, s_mac_addr);
+
+    // Configure static IP
     esp_netif_dhcps_stop(s_usb_netif);
 
     esp_netif_ip_info_t ip_info = {0};
@@ -153,22 +142,19 @@ esp_err_t usb_network_init(void)
 
     ret = esp_netif_set_ip_info(s_usb_netif, &ip_info);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set IP info: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to set IP: %s", esp_err_to_name(ret));
         return ret;
     }
 
     snprintf(s_ip_str, sizeof(s_ip_str), IPSTR, IP2STR(&ip_info.ip));
 
-    // Start DHCP server for host
+    // Start DHCP server for connected host
     esp_netif_dhcps_start(s_usb_netif);
 
-    // Register IP event handler
-    esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, &ip_event_handler, NULL);
-
-    // Attach driver to network interface
+    // Attach driver
     esp_netif_attach(s_usb_netif, (void *)1);
 
-    ESP_LOGI(TAG, "USB network initialized: IP=%s, MAC=%02x:%02x:%02x:%02x:%02x:%02x",
+    ESP_LOGI(TAG, "USB network ready: IP=%s, MAC=%02x:%02x:%02x:%02x:%02x:%02x",
              s_ip_str,
              s_mac_addr[0], s_mac_addr[1], s_mac_addr[2],
              s_mac_addr[3], s_mac_addr[4], s_mac_addr[5]);
@@ -178,8 +164,7 @@ esp_err_t usb_network_init(void)
 
 esp_err_t usb_network_start(void)
 {
-    ESP_LOGI(TAG, "USB network started, waiting for host connection...");
-    ESP_LOGI(TAG, "Connect via USB and access http://%s", s_ip_str);
+    ESP_LOGI(TAG, "USB network started, connect via USB to access http://%s/", s_ip_str);
     return ESP_OK;
 }
 
@@ -188,6 +173,7 @@ void usb_network_stop(void)
     if (s_usb_netif) {
         esp_netif_action_stop(s_usb_netif, NULL, 0, NULL);
     }
+    s_connected = false;
 }
 
 bool usb_network_is_connected(void)

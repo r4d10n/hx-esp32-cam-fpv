@@ -8,6 +8,7 @@
 #ifndef USB_NETWORK_H
 #define USB_NETWORK_H
 
+#include <stdbool.h>
 #include "esp_err.h"
 #include "sdkconfig.h"
 
