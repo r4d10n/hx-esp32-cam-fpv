@@ -221,4 +221,9 @@ esp_err_t packet_tx_send_config(void);
  */
 uint32_t packet_tx_get_latency_ms(void);
 
+/**
+ * Process air unit response (updates connection state and stats)
+ */
+void packet_tx_process_air_response(const uint8_t *data, size_t len);
+
 #endif // PACKET_TX_H

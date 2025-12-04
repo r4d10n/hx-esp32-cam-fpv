@@ -1,9 +1,12 @@
 /**
  * ESP32 FPV Ground Station - Packet RX Handler
+ * With FEC decoder integration
  */
 
 #include "packet_rx.h"
 #include "frame_buffer.h"
+#include "fec_decoder.h"
+#include "packet_tx.h"
 #include "esp_timer.h"
 
 static const char *TAG = "packet_rx";
@@ -44,6 +47,9 @@ static frame_state_t s_current_frame = {0};
 static void packet_process_task(void *arg);
 static bool process_fpv_packet(const uint8_t *data, size_t len);
 static int find_fec_header(const uint8_t *data, size_t len);
+static void process_video_payload(const uint8_t *payload, size_t payload_len);
+static void fec_packet_callback(uint32_t block_index, uint8_t packet_index,
+                                 const uint8_t *data, size_t size, bool recovered);
 
 esp_err_t packet_rx_init(void)
 {
@@ -54,7 +60,21 @@ esp_err_t packet_rx_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "Packet RX initialized, queue size=%d", PACKET_POOL_SIZE);
+    // Initialize FEC decoder
+    // K=8 data packets, N=12 total (4 FEC), block buffer count, timeout
+    esp_err_t ret = fec_decoder_init(g_config.fec_k, g_config.fec_n,
+                                      CONFIG_FPV_GS_FEC_BLOCK_BUFFER_COUNT,
+                                      CONFIG_FPV_GS_FEC_TIMEOUT_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init FEC decoder: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Set FEC callback for decoded packets
+    fec_decoder_set_callback(fec_packet_callback);
+
+    ESP_LOGI(TAG, "Packet RX initialized, queue=%d, FEC K=%d N=%d",
+             PACKET_POOL_SIZE, g_config.fec_k, g_config.fec_n);
     return ESP_OK;
 }
 
@@ -169,18 +189,26 @@ static void packet_process_task(void *arg)
 {
     (void)arg;  // Unused
     packet_item_t item;
+    uint32_t process_counter = 0;
 
     ESP_LOGI(TAG, "Packet processing task started");
 
     while (s_running) {
-        // Wait for packet with timeout
-        if (xQueueReceive(s_packet_queue, &item, pdMS_TO_TICKS(100)) == pdTRUE) {
+        // Wait for packet with short timeout
+        if (xQueueReceive(s_packet_queue, &item, pdMS_TO_TICKS(10)) == pdTRUE) {
             // Process FPV packet
             if (process_fpv_packet(item.data, item.len)) {
                 g_stats.packets_valid++;
             } else {
                 g_stats.packets_invalid++;
             }
+        }
+
+        // Process FEC blocks periodically (every ~10 packets or every 50ms)
+        process_counter++;
+        if (process_counter >= 10) {
+            fec_decoder_process();
+            process_counter = 0;
         }
     }
 
@@ -222,16 +250,11 @@ static bool process_fpv_packet(const uint8_t *data, size_t len)
         return false;
     }
 
+    // Mark connection as active (we received a valid FPV packet)
+    packet_tx_process_air_response(data, len);
+
     uint8_t packet_index = FPV_GET_PACKET_INDEX(fec);
     uint32_t block_index = FPV_GET_BLOCK_INDEX(fec);
-    (void)block_index;  // Will be used for FEC recovery
-
-    // For now, only process primary packets (index < K)
-    // FEC recovery will be added later
-    if (packet_index >= g_config.fec_k) {
-        // FEC parity packet - skip for now
-        return true;
-    }
 
     // Get payload
     size_t payload_offset = fec_offset + FPV_PACKET_HEADER_SIZE;
@@ -241,11 +264,35 @@ static bool process_fpv_packet(const uint8_t *data, size_t len)
         payload_len = len - payload_offset;
     }
 
-    if (payload_len < FPV_VIDEO_HEADER_SIZE) {
+    if (payload_len < 1) {
         return false;
     }
 
     const uint8_t *payload = data + payload_offset;
+
+    // Feed ALL packets to FEC decoder (both data and parity)
+    fec_decoder_add_packet(block_index, packet_index, payload, payload_len);
+
+    return true;
+}
+
+// FEC callback - called when a packet is ready (from complete block or recovered)
+static void fec_packet_callback(uint32_t block_index, uint8_t packet_index,
+                                 const uint8_t *data, size_t size, bool recovered)
+{
+    (void)block_index;
+    (void)packet_index;
+
+    // Process the video payload
+    process_video_payload(data, size);
+}
+
+// Process video payload from FEC-decoded packet
+static void process_video_payload(const uint8_t *payload, size_t payload_len)
+{
+    if (payload_len < FPV_VIDEO_HEADER_SIZE) {
+        return;
+    }
 
     // Parse video header
     const fpv_video_header_t *vh = (const fpv_video_header_t *)payload;
@@ -253,7 +300,7 @@ static bool process_fpv_packet(const uint8_t *data, size_t len)
     // Check packet type
     if (vh->type != FPV_PACKET_TYPE_VIDEO) {
         // Not a video packet (might be OSD, telemetry, etc.)
-        return true;
+        return;
     }
 
     // Extract video part info
@@ -266,7 +313,7 @@ static bool process_fpv_packet(const uint8_t *data, size_t len)
     size_t jpeg_len = payload_len - FPV_VIDEO_HEADER_SIZE;
 
     if (jpeg_len == 0) {
-        return false;
+        return;
     }
 
     // Handle frame assembly
@@ -307,6 +354,4 @@ static bool process_fpv_packet(const uint8_t *data, size_t len)
             }
         }
     }
-
-    return true;
 }
