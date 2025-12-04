@@ -20,8 +20,64 @@
 #include "wifi_manager.h"
 #include "packet_rx.h"
 #include "usb_network.h"
+#include "esp_heap_caps.h"
 
 static const char *TAG = "main";
+
+// Test PSRAM availability and functionality
+static void test_psram(void)
+{
+    size_t psram_size = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+    ESP_LOGI(TAG, "=== Memory Status ===");
+    ESP_LOGI(TAG, "PSRAM Total: %u KB", (unsigned)(psram_size / 1024));
+    ESP_LOGI(TAG, "PSRAM Free:  %u KB", (unsigned)(psram_free / 1024));
+    ESP_LOGI(TAG, "Internal Free: %u KB", (unsigned)(internal_free / 1024));
+
+    if (psram_size == 0) {
+        ESP_LOGW(TAG, "PSRAM not detected or not enabled!");
+        return;
+    }
+
+    // Test PSRAM with allocation
+    ESP_LOGI(TAG, "Testing PSRAM allocation...");
+    size_t test_size = 1024 * 1024;  // 1MB test
+    uint8_t *test_buf = heap_caps_malloc(test_size, MALLOC_CAP_SPIRAM);
+
+    if (test_buf == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate 1MB from PSRAM!");
+        return;
+    }
+
+    // Write test pattern
+    ESP_LOGI(TAG, "Writing test pattern to PSRAM...");
+    for (size_t i = 0; i < test_size; i += 4096) {
+        test_buf[i] = (uint8_t)(i >> 12);
+    }
+
+    // Verify test pattern
+    ESP_LOGI(TAG, "Verifying test pattern...");
+    bool pass = true;
+    for (size_t i = 0; i < test_size; i += 4096) {
+        if (test_buf[i] != (uint8_t)(i >> 12)) {
+            ESP_LOGE(TAG, "PSRAM verification failed at offset %u", (unsigned)i);
+            pass = false;
+            break;
+        }
+    }
+
+    heap_caps_free(test_buf);
+
+    if (pass) {
+        ESP_LOGI(TAG, "PSRAM test PASSED - 1MB verified");
+    }
+
+    // Show final memory state
+    psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    ESP_LOGI(TAG, "PSRAM Free after test: %u KB", (unsigned)(psram_free / 1024));
+}
 
 // Global configuration and statistics
 fpv_gs_config_t g_config = {0};
@@ -32,6 +88,9 @@ void app_main(void)
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "  ESP32 FPV Ground Station Starting");
     ESP_LOGI(TAG, "========================================");
+
+    // Test PSRAM availability
+    test_psram();
 
     // Initialize configuration (loads from NVS)
     ESP_ERROR_CHECK(config_manager_init());

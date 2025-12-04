@@ -27,43 +27,93 @@ menu "ESP32 FPV Ground Station Configuration"
         help
             Maximum number of stations that can connect to the AP.
 
-    config FPV_GS_FRAME_BUFFER_COUNT
-        int "Frame buffer count"
-        default 2
-        range 2 5
-        help
-            Number of frame buffers in the ring buffer.
-            Use 2 without PSRAM, 3-5 with PSRAM.
+    menu "Frame Buffer Configuration (PSRAM optimized)"
 
-    config FPV_GS_MAX_FRAME_SIZE
-        int "Maximum frame size (bytes)"
-        default 49152
-        range 16384 131072
-        help
-            Maximum size of a single JPEG frame.
-            48KB balances frame size vs memory for WiFi crypto.
-            Use 64KB+ with PSRAM.
+        config FPV_GS_FRAME_BUFFER_COUNT
+            int "Frame buffer count"
+            default 4
+            range 2 8
+            help
+                Number of frame buffers in the ring buffer.
+                Use 2 without PSRAM, 4-6 with PSRAM.
+                More buffers = smoother playback under packet loss.
+                Memory: count × max_frame_size bytes.
 
-    config FPV_GS_PACKET_QUEUE_SIZE
-        int "Packet queue size"
-        default 32
-        range 16 64
-        help
-            Size of the packet processing queue.
+        config FPV_GS_MAX_FRAME_SIZE
+            int "Maximum frame size (bytes)"
+            default 98304
+            range 16384 262144
+            help
+                Maximum size of a single JPEG frame.
+                48KB (49152) without PSRAM, 96KB (98304) with PSRAM.
+                256KB max for high-quality 1080p frames.
 
-    config FPV_GS_FEC_K
-        int "FEC K value (data packets per block)"
-        default 6
-        range 1 12
-        help
-            Number of primary data packets per FEC block.
+        config FPV_GS_PACKET_QUEUE_SIZE
+            int "Packet queue size"
+            default 64
+            range 16 128
+            help
+                Size of the packet processing queue.
+                Larger queue reduces packet drops during bursts.
 
-    config FPV_GS_FEC_N
-        int "FEC N value (total packets per block)"
-        default 12
-        range 2 24
-        help
-            Total number of packets per FEC block (K data + N-K parity).
+    endmenu
+
+    menu "FEC Configuration"
+
+        config FPV_GS_FEC_ENABLED
+            bool "Enable FEC decoding"
+            default y
+            help
+                Enable Forward Error Correction for packet recovery.
+                Adds latency but recovers from packet loss.
+
+        config FPV_GS_FEC_K
+            int "FEC K value (data packets per block)"
+            default 6
+            range 1 12
+            depends on FPV_GS_FEC_ENABLED
+            help
+                Number of primary data packets per FEC block.
+
+        config FPV_GS_FEC_N
+            int "FEC N value (total packets per block)"
+            default 12
+            range 2 24
+            depends on FPV_GS_FEC_ENABLED
+            help
+                Total number of packets per FEC block (K data + N-K parity).
+
+        config FPV_GS_FEC_BLOCK_BUFFER_COUNT
+            int "FEC block buffer count"
+            default 8
+            range 4 16
+            depends on FPV_GS_FEC_ENABLED
+            help
+                Number of FEC blocks that can be in flight simultaneously.
+                More blocks = better recovery under bursty loss.
+                Memory: count × (N × max_packet_size) bytes.
+                Default 8 blocks @ ~1.5KB/packet × 12 = ~144KB total.
+
+        config FPV_GS_FEC_MAX_PACKET_SIZE
+            int "FEC maximum packet payload size (bytes)"
+            default 1400
+            range 512 1500
+            depends on FPV_GS_FEC_ENABLED
+            help
+                Maximum payload size per FEC packet.
+                Must match transmitter configuration.
+                1400 bytes is optimal for WiFi MTU.
+
+        config FPV_GS_FEC_TIMEOUT_MS
+            int "FEC block timeout (ms)"
+            default 100
+            range 50 500
+            depends on FPV_GS_FEC_ENABLED
+            help
+                Timeout for incomplete FEC blocks.
+                After this time, attempt recovery with available packets.
+
+    endmenu
 
     menu "Network Interface Selection"
 
