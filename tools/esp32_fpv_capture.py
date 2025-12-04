@@ -752,6 +752,11 @@ class FrameAssembler:
 def find_fec_header(data: bytes, start: int = 0, end: int = None) -> int:
     if end is None:
         end = min(len(data), 150)
+    else:
+        end = min(end, len(data))
+    # Need at least 2 bytes to check signature at pos+1
+    if end <= start + 1:
+        return -1
     for pos in range(start, end - 1):
         if data[pos + 1] == PACKET_SIGNATURE:
             return pos
