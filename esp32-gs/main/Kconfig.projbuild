@@ -87,4 +87,66 @@ menu "ESP32 FPV Ground Station Configuration"
 
     endmenu
 
+    menu "USB UVC (USB Camera) Configuration"
+
+        config FPV_GS_ENABLE_USB_UVC
+            bool "Enable USB UVC (USB Webcam)"
+            default y
+            help
+                Enable USB Video Class (UVC) device mode.
+                The ESP32-S3 appears as a USB webcam to the host PC/Android.
+                Can be used with standard camera apps (VLC, OBS, etc.).
+                Runtime switching between UVC and NCM modes is supported.
+
+        config FPV_GS_UVC_WIDTH
+            int "UVC Frame Width"
+            default 640
+            range 320 1280
+            depends on FPV_GS_ENABLE_USB_UVC
+            help
+                Default width for UVC video frames.
+                Common values: 320, 480, 640, 800, 1280
+                Higher resolutions require more bandwidth.
+
+        config FPV_GS_UVC_HEIGHT
+            int "UVC Frame Height"
+            default 480
+            range 240 720
+            depends on FPV_GS_ENABLE_USB_UVC
+            help
+                Default height for UVC video frames.
+                Common values: 240, 320, 360, 456, 480, 720
+                Higher resolutions require more bandwidth.
+
+        config FPV_GS_UVC_FPS
+            int "UVC Frame Rate"
+            default 15
+            range 5 30
+            depends on FPV_GS_ENABLE_USB_UVC
+            help
+                Target frame rate for UVC streaming.
+                Actual FPS depends on incoming video and USB bandwidth.
+                15 FPS is recommended for 640x480.
+
+        config FPV_GS_UVC_BULK_MODE
+            bool "Use Bulk Transfer Mode (experimental)"
+            default n
+            depends on FPV_GS_ENABLE_USB_UVC
+            help
+                Use bulk transfer instead of isochronous for UVC.
+                Bulk mode offers higher throughput (~1.2 MB/s vs ~512 KB/s)
+                but may have compatibility issues on some Linux systems.
+                Default (isochronous) is recommended for better compatibility.
+
+        config FPV_GS_UVC_DEFAULT_ACTIVE
+            bool "UVC active by default (NCM inactive)"
+            default n
+            depends on FPV_GS_ENABLE_USB_UVC && FPV_GS_ENABLE_USB_NET
+            help
+                If both UVC and NCM are enabled, this selects which one
+                is active by default at boot. Can be switched at runtime.
+                If disabled, NCM is active by default.
+
+    endmenu
+
 endmenu

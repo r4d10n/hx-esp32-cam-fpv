@@ -3,4 +3,6 @@ dependencies:
   # USB NCM networking with esp_netif integration
   chegewara/usb-netif: "*"
   espressif/esp_tinyusb: "^1.4.0"
+  # USB Video Class (UVC) device driver
+  espressif/usb_device_uvc: "^1.2.0"
   idf: "^5.0"

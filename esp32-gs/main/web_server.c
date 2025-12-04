@@ -5,6 +5,8 @@
 #include "web_server.h"
 #include "frame_buffer.h"
 #include "config_manager.h"
+#include "usb_device.h"
+#include "usb_uvc.h"
 #include "esp_http_server.h"
 #include "esp_timer.h"
 #include <stdio.h>
@@ -38,6 +40,7 @@ static esp_err_t ws_handler(httpd_req_t *req);
 static esp_err_t api_config_handler(httpd_req_t *req);
 static esp_err_t api_stats_handler(httpd_req_t *req);
 static esp_err_t api_channel_handler(httpd_req_t *req);
+static esp_err_t api_usb_mode_handler(httpd_req_t *req);
 static void stream_task(void *arg);
 
 // URI handlers
@@ -90,6 +93,18 @@ static const httpd_uri_t uri_api_channel = {
     .handler = api_channel_handler,
 };
 
+static const httpd_uri_t uri_api_usb_mode = {
+    .uri = "/api/usb_mode",
+    .method = HTTP_GET,
+    .handler = api_usb_mode_handler,
+};
+
+static const httpd_uri_t uri_api_usb_mode_post = {
+    .uri = "/api/usb_mode",
+    .method = HTTP_POST,
+    .handler = api_usb_mode_handler,
+};
+
 esp_err_t web_server_init(void)
 {
     s_ws_mutex = xSemaphoreCreateMutex();
@@ -130,6 +145,8 @@ esp_err_t web_server_start(void)
     httpd_register_uri_handler(s_server, &uri_api_config_post);
     httpd_register_uri_handler(s_server, &uri_api_stats);
     httpd_register_uri_handler(s_server, &uri_api_channel);
+    httpd_register_uri_handler(s_server, &uri_api_usb_mode);
+    httpd_register_uri_handler(s_server, &uri_api_usb_mode_post);
 
     // Start streaming task - higher priority for smooth video
     s_streaming = true;
@@ -314,6 +331,83 @@ static esp_err_t api_channel_handler(httpd_req_t *req)
     }
 
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid channel");
+    return ESP_OK;
+}
+
+// USB mode handler - GET returns current mode, POST switches mode
+static esp_err_t api_usb_mode_handler(httpd_req_t *req)
+{
+#if defined(CONFIG_FPV_GS_ENABLE_USB_NET) || defined(CONFIG_FPV_GS_ENABLE_USB_UVC)
+    if (req->method == HTTP_GET) {
+        // Return current USB mode and available modes
+        char buf[256];
+        usb_mode_t mode = usb_device_get_mode();
+
+        int len = snprintf(buf, sizeof(buf),
+            "{"
+            "\"mode\":\"%s\","
+            "\"connected\":%s,"
+            "\"ncm_available\":%s,"
+            "\"uvc_available\":%s"
+#ifdef CONFIG_FPV_GS_ENABLE_USB_UVC
+            ",\"uvc_streaming\":%s"
+#endif
+            "}",
+            usb_device_mode_str(mode),
+            usb_device_is_connected() ? "true" : "false",
+#ifdef CONFIG_FPV_GS_ENABLE_USB_NET
+            "true",
+#else
+            "false",
+#endif
+#ifdef CONFIG_FPV_GS_ENABLE_USB_UVC
+            "true",
+            usb_uvc_is_streaming() ? "true" : "false"
+#else
+            "false"
+#endif
+        );
+
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, buf, len);
+    } else {
+        // POST - switch USB mode
+        char buf[32];
+        int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
+        if (len > 0) {
+            buf[len] = '\0';
+
+            esp_err_t ret = ESP_OK;
+
+            // Parse mode
+            if (strstr(buf, "\"mode\":\"NCM\"") || strstr(buf, "\"mode\":\"ncm\"")) {
+                ret = usb_device_set_mode_ncm();
+            } else if (strstr(buf, "\"mode\":\"UVC\"") || strstr(buf, "\"mode\":\"uvc\"")) {
+                ret = usb_device_set_mode_uvc();
+            } else if (strstr(buf, "\"mode\":\"toggle\"")) {
+                usb_device_toggle_mode();
+            } else {
+                httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid mode");
+                return ESP_OK;
+            }
+
+            if (ret == ESP_OK) {
+                char resp[64];
+                snprintf(resp, sizeof(resp),
+                         "{\"status\":\"ok\",\"mode\":\"%s\"}",
+                         usb_device_mode_str(usb_device_get_mode()));
+                httpd_resp_set_type(req, "application/json");
+                httpd_resp_sendstr(req, resp);
+            } else {
+                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Mode switch failed");
+            }
+        } else {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad Request");
+        }
+    }
+#else
+    httpd_resp_sendstr(req, "{\"mode\":\"NONE\",\"connected\":false}");
+#endif
     return ESP_OK;
 }
 

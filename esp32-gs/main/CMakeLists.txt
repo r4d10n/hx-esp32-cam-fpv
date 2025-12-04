@@ -6,7 +6,8 @@ idf_component_register(
         "frame_buffer.c"
         "web_server.c"
         "config_manager.c"
-        "usb_network.c"
+        "usb_device.c"
+        "usb_uvc.c"
     INCLUDE_DIRS
         "."
     EMBED_FILES
