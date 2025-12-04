@@ -19,6 +19,8 @@
 #include "web_server.h"
 #include "wifi_manager.h"
 #include "packet_rx.h"
+#include "packet_tx.h"
+#include "fec_decoder.h"
 #include "usb_network.h"
 #include "esp_heap_caps.h"
 
@@ -166,22 +168,46 @@ void app_main(void)
                  (unsigned long)g_stats.websocket_clients);
 
 #ifdef CONFIG_FPV_GS_ENABLE_USB_NET
-        // Output to USB CDC serial with IP addresses
-        usb_cdc_printf("\r\n=== FPV Ground Station Stats ===\r\n");
-        usb_cdc_printf("ESP32 IP: %s | Client IP: %s\r\n",
-                       usb_network_get_ip(),
-                       usb_network_get_client_ip());
-        usb_cdc_printf("Channel: %d | RSSI: %d dBm\r\n",
-                       g_stats.channel,
-                       g_stats.rssi_dbm);
-        usb_cdc_printf("Packets: %lu recv, %lu valid\r\n",
+        // Get FEC stats
+        fec_stats_t fec;
+        fec_decoder_get_stats(&fec);
+        air_stats_t *air = packet_tx_get_air_stats();
+
+        // Calculate FEC recovery rate
+        uint32_t total_fec = fec.blocks_complete + fec.blocks_recovered + fec.blocks_failed;
+        float fec_rate = (total_fec > 0) ?
+            (float)(fec.blocks_complete + fec.blocks_recovered) * 100.0f / total_fec : 0.0f;
+
+        // Output to USB CDC serial
+        usb_cdc_printf("\r\n=== FPV GS Stats ===\r\n");
+        usb_cdc_printf("CH:%d RSSI:%ddBm %s\r\n",
+                       g_stats.channel, g_stats.rssi_dbm,
+                       packet_tx_is_connected() ? "CONNECTED" : "NO-LINK");
+        usb_cdc_printf("FEC: blk=%lu ok=%lu rec=%lu fail=%lu (%.1f%%)\r\n",
+                       (unsigned long)total_fec,
+                       (unsigned long)fec.blocks_complete,
+                       (unsigned long)fec.blocks_recovered,
+                       (unsigned long)fec.blocks_failed,
+                       fec_rate);
+        usb_cdc_printf("PKT: rx=%lu valid=%lu | FRM: ok=%lu lost=%lu\r\n",
                        (unsigned long)g_stats.packets_received,
-                       (unsigned long)g_stats.packets_valid);
-        usb_cdc_printf("Frames: %lu complete, %lu incomplete\r\n",
+                       (unsigned long)g_stats.packets_valid,
                        (unsigned long)g_stats.frames_complete,
                        (unsigned long)g_stats.frames_incomplete);
-        usb_cdc_printf("WebSocket clients: %lu\r\n",
-                       (unsigned long)g_stats.websocket_clients);
+
+        // Air unit stats (if connected)
+        if (packet_tx_is_connected()) {
+            usb_cdc_printf("AIR: Q:%d FPS:%d Temp:%dC\r\n",
+                           air->curr_quality,
+                           air->capture_fps,
+                           air->temperature);
+        }
+
+        // Web clients
+        uint8_t ws_count = web_server_get_client_count();
+        usb_cdc_printf("WS clients: %d | USB: %s\r\n",
+                       ws_count, usb_network_get_client_ip());
+        usb_cdc_printf("====================\r\n");
 #endif
     }
 }
