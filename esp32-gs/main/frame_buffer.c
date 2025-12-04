@@ -51,6 +51,54 @@ static struct {
     bool has_last;
 } s_assembly;
 
+// Helper to free all allocated buffers
+static void free_all_buffers(void)
+{
+    for (int i = 0; i < FRAME_BUFFER_COUNT; i++) {
+        if (s_frames[i].data) {
+            free(s_frames[i].data);
+            s_frames[i].data = NULL;
+        }
+    }
+    if (s_assembly.data) {
+        free(s_assembly.data);
+        s_assembly.data = NULL;
+    }
+}
+
+// Try to allocate all buffers at given size
+static bool try_allocate_buffers(size_t size, bool use_psram)
+{
+    uint32_t caps = use_psram ?
+        (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) :
+        (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+    // Allocate frame buffers
+    for (int i = 0; i < FRAME_BUFFER_COUNT; i++) {
+        s_frames[i].data = heap_caps_malloc(size, caps);
+        if (s_frames[i].data == NULL) {
+            free_all_buffers();
+            return false;
+        }
+        s_frames[i].capacity = size;
+        s_frames[i].size = 0;
+        s_frames[i].frame_index = 0;
+        s_frames[i].in_progress = false;
+        s_frames[i].complete = false;
+        s_frames[i].being_read = false;
+        memset(s_frames[i].parts_mask, 0, sizeof(s_frames[i].parts_mask));
+    }
+
+    // Allocate assembly buffer
+    s_assembly.data = heap_caps_malloc(size, caps);
+    if (s_assembly.data == NULL) {
+        free_all_buffers();
+        return false;
+    }
+
+    return true;
+}
+
 esp_err_t frame_buffer_init(void)
 {
     // Create mutex
@@ -63,92 +111,65 @@ esp_err_t frame_buffer_init(void)
     // Check available memory
     size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     size_t free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    ESP_LOGI(TAG, "Free memory: PSRAM=%u, Internal=%u",
-             (unsigned)free_psram, (unsigned)free_internal);
+    size_t largest_block = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+    ESP_LOGI(TAG, "Free memory: PSRAM=%u, Internal=%u (largest block=%u)",
+             (unsigned)free_psram, (unsigned)free_internal, (unsigned)largest_block);
 
     bool using_psram = false;
-
-    // Calculate optimal buffer size based on available RAM
-    // Need: FRAME_BUFFER_COUNT buffers + 1 assembly buffer
     size_t total_buffers = FRAME_BUFFER_COUNT + 1;
-    size_t available_for_buffers;
 
+    // Try PSRAM first if available
     if (free_psram >= total_buffers * MIN_FRAME_SIZE) {
-        // Use PSRAM - can use larger buffers
-        available_for_buffers = free_psram;
-        using_psram = true;
-    } else {
-        // Use internal RAM - leave reserve for WiFi/TCP
-        available_for_buffers = (free_internal > RESERVED_RAM) ?
-                                (free_internal - RESERVED_RAM) : 0;
+        s_buffer_size = free_psram / total_buffers;
+        if (s_buffer_size > MAX_FRAME_SIZE_CAP) {
+            s_buffer_size = MAX_FRAME_SIZE_CAP;
+        }
+        s_buffer_size = (s_buffer_size / 4096) * 4096;
+
+        if (try_allocate_buffers(s_buffer_size, true)) {
+            using_psram = true;
+            ESP_LOGI(TAG, "Using PSRAM for frame buffers");
+        }
     }
 
-    // Calculate per-buffer size
-    s_buffer_size = available_for_buffers / total_buffers;
+    // Fall back to internal RAM with conservative sizing
+    if (!using_psram) {
+        // Start with largest block that can fit, then retry smaller if needed
+        // Use largest_block as guide, but need to fit multiple buffers
+        s_buffer_size = (largest_block > RESERVED_RAM) ?
+                        (largest_block - 8192) : MIN_FRAME_SIZE;  // Leave headroom
 
-    // Clamp to reasonable bounds
-    if (s_buffer_size < MIN_FRAME_SIZE) {
-        s_buffer_size = MIN_FRAME_SIZE;
-        ESP_LOGW(TAG, "Low memory, using minimum buffer size %u", (unsigned)s_buffer_size);
-    }
-    if (s_buffer_size > MAX_FRAME_SIZE_CAP) {
-        s_buffer_size = MAX_FRAME_SIZE_CAP;
-    }
-
-    // Align to 4KB for efficient allocation
-    s_buffer_size = (s_buffer_size / 4096) * 4096;
-    if (s_buffer_size < MIN_FRAME_SIZE) {
-        s_buffer_size = MIN_FRAME_SIZE;
-    }
-
-    ESP_LOGI(TAG, "Calculated buffer size: %u bytes (%u KB)",
-             (unsigned)s_buffer_size, (unsigned)(s_buffer_size / 1024));
-
-    // Allocate frame buffers
-    for (int i = 0; i < FRAME_BUFFER_COUNT; i++) {
-        if (using_psram) {
-            s_frames[i].data = heap_caps_malloc(s_buffer_size,
-                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        // Cap at what we can theoretically fit
+        size_t max_per_buffer = (free_internal - RESERVED_RAM) / total_buffers;
+        if (s_buffer_size > max_per_buffer) {
+            s_buffer_size = max_per_buffer;
+        }
+        if (s_buffer_size > MAX_FRAME_SIZE_CAP) {
+            s_buffer_size = MAX_FRAME_SIZE_CAP;
         }
 
-        if (s_frames[i].data == NULL) {
-            // Fall back to internal RAM
-            s_frames[i].data = heap_caps_malloc(s_buffer_size,
-                MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-            using_psram = false;
-        }
+        // Align to 4KB
+        s_buffer_size = (s_buffer_size / 4096) * 4096;
 
-        if (s_frames[i].data == NULL) {
-            ESP_LOGE(TAG, "Failed to allocate frame buffer %d", i);
-            // Free previously allocated buffers
-            for (int j = 0; j < i; j++) {
-                free(s_frames[j].data);
-                s_frames[j].data = NULL;
+        // Try progressively smaller sizes until allocation succeeds
+        while (s_buffer_size >= MIN_FRAME_SIZE) {
+            ESP_LOGI(TAG, "Trying buffer size: %u KB", (unsigned)(s_buffer_size / 1024));
+
+            if (try_allocate_buffers(s_buffer_size, false)) {
+                break;  // Success!
             }
+
+            // Reduce by 8KB and try again
+            s_buffer_size -= 8192;
+            s_buffer_size = (s_buffer_size / 4096) * 4096;
+        }
+
+        if (s_buffer_size < MIN_FRAME_SIZE || s_frames[0].data == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate frame buffers (tried down to %u KB)",
+                     (unsigned)(MIN_FRAME_SIZE / 1024));
             return ESP_ERR_NO_MEM;
         }
-
-        s_frames[i].capacity = s_buffer_size;
-        s_frames[i].size = 0;
-        s_frames[i].frame_index = 0;
-        s_frames[i].in_progress = false;
-        s_frames[i].complete = false;
-        s_frames[i].being_read = false;
-        memset(s_frames[i].parts_mask, 0, sizeof(s_frames[i].parts_mask));
-    }
-
-    // Allocate assembly buffer (same size as frame buffers)
-    if (using_psram) {
-        s_assembly.data = heap_caps_malloc(s_buffer_size,
-            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    }
-    if (s_assembly.data == NULL) {
-        s_assembly.data = heap_caps_malloc(s_buffer_size,
-            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    }
-    if (s_assembly.data == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate assembly buffer");
-        return ESP_ERR_NO_MEM;
     }
 
     // Log memory status after allocation
