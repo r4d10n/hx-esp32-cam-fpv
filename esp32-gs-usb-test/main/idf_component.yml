@@ -1,4 +1,5 @@
 ## IDF Component Manager Manifest File
 dependencies:
   chegewara/usb-netif: "*"
+  espressif/esp_tinyusb: "^1.4.0"
   idf: "^5.0"
