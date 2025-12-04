@@ -125,12 +125,13 @@ esp_err_t packet_rx_start(void)
     s_running = true;
 
     // Create processing task (pinned to Core 0 for WiFi affinity)
+    // High priority (configMAX_PRIORITIES-2) to ensure packets are processed quickly
     BaseType_t ret = xTaskCreatePinnedToCore(
         packet_process_task,
         "pkt_proc",
-        4096,
+        8192,   // Larger stack for faster processing
         NULL,
-        5,  // Higher priority than web server
+        configMAX_PRIORITIES - 2,  // Very high priority
         &s_process_task,
         0   // Core 0
     );

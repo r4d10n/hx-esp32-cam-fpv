@@ -11,6 +11,7 @@ static const char *TAG = "frame_buf";
 #define FRAME_BUFFER_COUNT CONFIG_FPV_GS_FRAME_BUFFER_COUNT
 #define MAX_FRAME_SIZE CONFIG_FPV_GS_MAX_FRAME_SIZE
 #define MAX_PARTS 128  // Maximum parts per frame
+#define FRAME_TIMEOUT_US (100 * 1000)  // 100ms timeout for incomplete frames
 
 // Frame buffer entry
 typedef struct {
@@ -18,6 +19,7 @@ typedef struct {
     size_t size;                // Current data size
     size_t capacity;            // Buffer capacity
     uint32_t frame_index;       // Frame index
+    int64_t start_timestamp;    // When frame assembly started
     int64_t timestamp;          // Completion timestamp
     uint8_t parts_mask[16];     // Bitmask for received parts (128 bits)
     uint8_t last_part_index;    // Index of last part (when known)
@@ -137,6 +139,7 @@ void frame_buffer_start_frame(uint32_t frame_index)
     frame_buffer_entry_t *f = &s_frames[idx];
     f->size = 0;
     f->frame_index = frame_index;
+    f->start_timestamp = esp_timer_get_time();
     f->in_progress = true;
     f->complete = false;
     f->last_part_index = 0xFF;
@@ -164,6 +167,17 @@ bool frame_buffer_add_part(uint8_t part_index, const uint8_t *data, size_t len)
     frame_buffer_entry_t *f = &s_frames[s_write_idx];
 
     if (!f->in_progress) {
+        xSemaphoreGive(s_mutex);
+        return false;
+    }
+
+    // Check for frame timeout - discard stale frames
+    int64_t now = esp_timer_get_time();
+    if (now - f->start_timestamp > FRAME_TIMEOUT_US) {
+        // Frame took too long, discard it
+        f->in_progress = false;
+        f->complete = false;
+        g_stats.frames_incomplete++;
         xSemaphoreGive(s_mutex);
         return false;
     }

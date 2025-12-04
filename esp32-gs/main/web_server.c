@@ -131,14 +131,14 @@ esp_err_t web_server_start(void)
     httpd_register_uri_handler(s_server, &uri_api_stats);
     httpd_register_uri_handler(s_server, &uri_api_channel);
 
-    // Start streaming task
+    // Start streaming task - higher priority for smooth video
     s_streaming = true;
     xTaskCreatePinnedToCore(
         stream_task,
         "ws_stream",
-        4096,
+        6144,   // Larger stack
         NULL,
-        4,
+        configMAX_PRIORITIES - 3,  // High priority, just below packet RX
         &s_stream_task,
         1  // Core 1 (opposite of packet RX)
     );
@@ -317,7 +317,7 @@ static esp_err_t api_channel_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-// Frame streaming task
+// Frame streaming task - optimized for low latency
 static void stream_task(void *arg)
 {
     (void)arg;  // Unused
@@ -327,16 +327,25 @@ static void stream_task(void *arg)
     memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
     ws_pkt.type = HTTPD_WS_TYPE_BINARY;
 
+    TickType_t last_send = 0;
+    const TickType_t min_frame_interval = pdMS_TO_TICKS(16);  // ~60fps max
+
     while (s_streaming) {
-        // Check for new frame
+        // Check for new frame - minimal delay for responsiveness
         if (!frame_buffer_has_new_frame()) {
-            vTaskDelay(pdMS_TO_TICKS(5));
+            vTaskDelay(pdMS_TO_TICKS(1));
+            continue;
+        }
+
+        // Rate limiting - don't send faster than client can handle
+        TickType_t now = xTaskGetTickCount();
+        if (now - last_send < min_frame_interval) {
+            vTaskDelay(pdMS_TO_TICKS(1));
             continue;
         }
 
         frame_info_t *frame = frame_buffer_get_latest();
         if (frame == NULL) {
-            vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
 
@@ -352,8 +361,7 @@ static void stream_task(void *arg)
                     s_server, s_ws_fds[i], &ws_pkt);
 
                 if (ret != ESP_OK) {
-                    // Client disconnected
-                    ESP_LOGI(TAG, "WebSocket client disconnected, fd=%d", s_ws_fds[i]);
+                    // Client disconnected or send failed
                     s_ws_fds[i] = -1;
                     if (s_ws_client_count > 0) s_ws_client_count--;
                     g_stats.websocket_clients = s_ws_client_count;
@@ -367,9 +375,10 @@ static void stream_task(void *arg)
 
         // Release frame
         frame_buffer_release(frame);
+        last_send = now;
 
-        // Small delay to prevent overwhelming clients
-        vTaskDelay(pdMS_TO_TICKS(1));
+        // Yield to other tasks
+        taskYIELD();
     }
 
     ESP_LOGI(TAG, "Streaming task exiting");
