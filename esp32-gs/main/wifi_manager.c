@@ -105,29 +105,22 @@ esp_err_t wifi_manager_init(void)
     // Set WiFi mode to AP
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
 
-    // Configure AP
+    // Configure AP - Use open WiFi for lower latency (no WPA2 overhead)
     wifi_config_t ap_config = {
         .ap = {
             .channel = g_config.channel,
             .max_connection = CONFIG_FPV_GS_MAX_STA_CONN,
-            .authmode = WIFI_AUTH_WPA2_PSK,
+            .authmode = WIFI_AUTH_OPEN,  // Open network for best performance
             .pmf_cfg = {
                 .required = false,
             },
         },
     };
 
-    // Set SSID and password
+    // Set SSID
     strncpy((char *)ap_config.ap.ssid, g_config.ap_ssid, sizeof(ap_config.ap.ssid));
     ap_config.ap.ssid_len = strlen(g_config.ap_ssid);
-
-    if (strlen(g_config.ap_password) >= 8) {
-        strncpy((char *)ap_config.ap.password, g_config.ap_password, sizeof(ap_config.ap.password));
-    } else {
-        // Open network if password too short
-        ap_config.ap.authmode = WIFI_AUTH_OPEN;
-        ESP_LOGW(TAG, "Password too short, using open network");
-    }
+    // Password not used for open network
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
 
@@ -210,12 +203,12 @@ esp_err_t wifi_set_channel(uint8_t channel)
     // Stop WiFi
     esp_wifi_stop();
 
-    // Update AP config with new channel
+    // Update AP config with new channel - use open WiFi for best performance
     wifi_config_t ap_config = {
         .ap = {
             .channel = channel,
             .max_connection = CONFIG_FPV_GS_MAX_STA_CONN,
-            .authmode = WIFI_AUTH_WPA2_PSK,
+            .authmode = WIFI_AUTH_OPEN,
             .pmf_cfg = {
                 .required = false,
             },
@@ -224,12 +217,6 @@ esp_err_t wifi_set_channel(uint8_t channel)
 
     strncpy((char *)ap_config.ap.ssid, g_config.ap_ssid, sizeof(ap_config.ap.ssid));
     ap_config.ap.ssid_len = strlen(g_config.ap_ssid);
-
-    if (strlen(g_config.ap_password) >= 8) {
-        strncpy((char *)ap_config.ap.password, g_config.ap_password, sizeof(ap_config.ap.password));
-    } else {
-        ap_config.ap.authmode = WIFI_AUTH_OPEN;
-    }
 
     ret = esp_wifi_set_config(WIFI_IF_AP, &ap_config);
     if (ret != ESP_OK) {
