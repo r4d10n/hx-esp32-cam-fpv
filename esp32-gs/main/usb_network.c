@@ -13,6 +13,7 @@
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_mac.h"
+#include "lwip/ip4_addr.h"
 #include "tinyusb.h"
 #include "tinyusb_net.h"
 
@@ -26,12 +27,13 @@ static char s_ip_str[16] = "0.0.0.0";
 static uint8_t s_mac_addr[6] = {0x02, 0x02, 0x84, 0x6A, 0x96, 0x01};
 
 // Receive callback from TinyUSB - called when packet received from host
-static void usb_recv_callback(void *buffer, uint16_t len, void *ctx)
+static esp_err_t usb_recv_callback(void *buffer, uint16_t len, void *ctx)
 {
     (void)ctx;
     if (s_usb_netif && buffer && len > 0) {
         esp_netif_receive(s_usb_netif, buffer, len, NULL);
     }
+    return ESP_OK;
 }
 
 // Transmit driver function for lwIP
@@ -136,8 +138,8 @@ esp_err_t usb_network_init(void)
     esp_netif_dhcps_stop(s_usb_netif);
 
     esp_netif_ip_info_t ip_info = {0};
-    ip_info.ip.addr = ipaddr_addr(CONFIG_FPV_GS_USB_NET_IP);
-    ip_info.netmask.addr = ipaddr_addr(CONFIG_FPV_GS_USB_NET_MASK);
+    ip4addr_aton(CONFIG_FPV_GS_USB_NET_IP, (ip4_addr_t *)&ip_info.ip);
+    ip4addr_aton(CONFIG_FPV_GS_USB_NET_MASK, (ip4_addr_t *)&ip_info.netmask);
     ip_info.gw.addr = ip_info.ip.addr;
 
     ret = esp_netif_set_ip_info(s_usb_netif, &ip_info);
