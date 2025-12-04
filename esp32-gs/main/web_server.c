@@ -198,11 +198,33 @@ static esp_err_t css_handler(httpd_req_t *req)
 static esp_err_t ws_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET) {
-        ESP_LOGI(TAG, "WebSocket handshake");
+        // WebSocket handshake - add client to list
+        int fd = httpd_req_to_sockfd(req);
+
+        xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
+
+        bool added = false;
+        for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+            if (s_ws_fds[i] < 0) {
+                s_ws_fds[i] = fd;
+                s_ws_client_count++;
+                added = true;
+                ESP_LOGI(TAG, "WebSocket client connected, fd=%d, total=%d", fd, s_ws_client_count);
+                break;
+            }
+        }
+
+        xSemaphoreGive(s_ws_mutex);
+
+        if (!added) {
+            ESP_LOGW(TAG, "Max WebSocket clients reached");
+        }
+
+        g_stats.websocket_clients = s_ws_client_count;
         return ESP_OK;
     }
 
-    // Handle WebSocket frame
+    // Handle incoming WebSocket frame (if client sends anything)
     httpd_ws_frame_t ws_pkt;
     memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
     ws_pkt.type = HTTPD_WS_TYPE_TEXT;
@@ -212,30 +234,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
         return ret;
     }
 
-    // Client connected - add to list
-    int fd = httpd_req_to_sockfd(req);
-
-    xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
-
-    bool added = false;
-    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
-        if (s_ws_fds[i] < 0) {
-            s_ws_fds[i] = fd;
-            s_ws_client_count++;
-            added = true;
-            ESP_LOGI(TAG, "WebSocket client connected, fd=%d, total=%d", fd, s_ws_client_count);
-            break;
-        }
-    }
-
-    xSemaphoreGive(s_ws_mutex);
-
-    if (!added) {
-        ESP_LOGW(TAG, "Max WebSocket clients reached");
-    }
-
-    g_stats.websocket_clients = s_ws_client_count;
-
+    // Just acknowledge any message received
     return ESP_OK;
 }
 
