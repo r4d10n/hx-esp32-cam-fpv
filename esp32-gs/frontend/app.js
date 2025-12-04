@@ -163,6 +163,11 @@ async function loadConfig() {
 }
 
 async function setChannel(channel) {
+    if (channel === currentChannel) return;
+
+    // Show notification that connection will reset
+    showNotification('Changing channel... Connection will reset.');
+
     try {
         const resp = await fetch('/api/channel', {
             method: 'POST',
@@ -174,10 +179,39 @@ async function setChannel(channel) {
             currentChannel = channel;
             channelEl.textContent = `CH: ${channel}`;
             console.log('Channel set to', channel);
+            // Connection will likely be lost, show reconnecting message
+            showNotification('Channel changed. Reconnecting...');
+            showNoSignal();
+            // Force reconnect after a short delay
+            setTimeout(() => {
+                if (ws) ws.close();
+                connectWebSocket();
+            }, 1000);
         }
     } catch (err) {
         console.error('Failed to set channel:', err);
+        showNotification('Failed to change channel');
     }
+}
+
+function showNotification(message) {
+    // Create or update notification element
+    let notif = document.getElementById('notification');
+    if (!notif) {
+        notif = document.createElement('div');
+        notif.id = 'notification';
+        notif.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);' +
+            'background:rgba(0,0,0,0.8);color:#fff;padding:10px 20px;border-radius:5px;' +
+            'z-index:1000;font-size:14px;';
+        document.body.appendChild(notif);
+    }
+    notif.textContent = message;
+    notif.style.display = 'block';
+
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+        notif.style.display = 'none';
+    }, 3000);
 }
 
 async function saveApConfig() {

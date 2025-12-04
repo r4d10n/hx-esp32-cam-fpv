@@ -189,16 +189,75 @@ esp_err_t wifi_set_channel(uint8_t channel)
         return ESP_ERR_INVALID_ARG;
     }
 
+    // Try simple channel change first
     esp_err_t ret = esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
     if (ret == ESP_OK) {
         g_config.channel = channel;
         g_stats.channel = channel;
         ESP_LOGI(TAG, "Channel set to %d", channel);
-    } else {
-        ESP_LOGE(TAG, "Failed to set channel %d: %s", channel, esp_err_to_name(ret));
+        return ESP_OK;
     }
 
-    return ret;
+    // If simple change fails (clients connected), restart AP on new channel
+    ESP_LOGI(TAG, "Restarting AP to change channel to %d...", channel);
+
+    // Disable promiscuous mode
+    esp_wifi_set_promiscuous(false);
+
+    // Disconnect all stations
+    esp_wifi_deauth_sta(0);  // 0 = all stations
+
+    // Stop WiFi
+    esp_wifi_stop();
+
+    // Update AP config with new channel
+    wifi_config_t ap_config = {
+        .ap = {
+            .channel = channel,
+            .max_connection = CONFIG_FPV_GS_MAX_STA_CONN,
+            .authmode = WIFI_AUTH_WPA2_PSK,
+            .pmf_cfg = {
+                .required = false,
+            },
+        },
+    };
+
+    strncpy((char *)ap_config.ap.ssid, g_config.ap_ssid, sizeof(ap_config.ap.ssid));
+    ap_config.ap.ssid_len = strlen(g_config.ap_ssid);
+
+    if (strlen(g_config.ap_password) >= 8) {
+        strncpy((char *)ap_config.ap.password, g_config.ap_password, sizeof(ap_config.ap.password));
+    } else {
+        ap_config.ap.authmode = WIFI_AUTH_OPEN;
+    }
+
+    ret = esp_wifi_set_config(WIFI_IF_AP, &ap_config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set AP config: %s", esp_err_to_name(ret));
+        // Try to restart anyway
+    }
+
+    // Restart WiFi
+    ret = esp_wifi_start();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to restart WiFi: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Re-enable promiscuous mode
+    wifi_promiscuous_filter_t filter = {
+        .filter_mask = WIFI_PROMIS_FILTER_MASK_DATA | WIFI_PROMIS_FILTER_MASK_DATA_MPDU,
+    };
+    esp_wifi_set_promiscuous_filter(&filter);
+    esp_wifi_set_promiscuous(true);
+
+    // Update config
+    g_config.channel = channel;
+    g_stats.channel = channel;
+
+    ESP_LOGI(TAG, "AP restarted on channel %d", channel);
+
+    return ESP_OK;
 }
 
 uint8_t wifi_get_channel(void)
