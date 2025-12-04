@@ -37,11 +37,12 @@ menu "ESP32 FPV Ground Station Configuration"
 
     config FPV_GS_MAX_FRAME_SIZE
         int "Maximum frame size (bytes)"
-        default 65536
+        default 49152
         range 16384 131072
         help
             Maximum size of a single JPEG frame.
-            64KB should handle most FPV camera resolutions.
+            48KB balances frame size vs memory for WiFi crypto.
+            Use 64KB+ with PSRAM.
 
     config FPV_GS_PACKET_QUEUE_SIZE
         int "Packet queue size"

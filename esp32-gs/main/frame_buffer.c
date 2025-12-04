@@ -110,9 +110,12 @@ esp_err_t frame_buffer_init(void)
         return ESP_ERR_NO_MEM;
     }
 
+    // Log memory status after allocation
+    size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     ESP_LOGI(TAG, "Frame buffer initialized: %d buffers x %d bytes (%s RAM)",
              FRAME_BUFFER_COUNT, MAX_FRAME_SIZE,
              using_psram ? "PSRAM" : "internal");
+    ESP_LOGI(TAG, "Free internal heap after allocation: %u bytes", (unsigned)free_heap);
 
     return ESP_OK;
 }
