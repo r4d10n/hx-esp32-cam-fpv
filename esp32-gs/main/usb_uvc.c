@@ -43,6 +43,15 @@ static size_t s_uvc_buffer_size = 0;
 static uvc_fb_t s_current_fb = {0};
 static volatile bool s_frame_valid = false;
 
+// Periodic UVC status logging
+static int64_t s_uvc_last_log_time = 0;
+static uint32_t s_uvc_frames_sent_since_log = 0;
+static uint32_t s_uvc_frames_dropped_since_log = 0;
+static size_t s_uvc_bytes_sent_since_log = 0;
+static uint32_t s_uvc_fb_get_calls_since_log = 0;
+static uint32_t s_uvc_no_frame_count_since_log = 0;
+#define UVC_LOG_INTERVAL_US (5 * 1000000)  // 5 seconds
+
 /**
  * UVC start callback - called when host opens UVC device
  */
@@ -78,6 +87,32 @@ static void uvc_on_stop(void *cb_ctx)
 }
 
 /**
+ * Log UVC status periodically
+ */
+static void uvc_log_status_if_needed(void)
+{
+    int64_t now = esp_timer_get_time();
+    if (now - s_uvc_last_log_time >= UVC_LOG_INTERVAL_US) {
+        int64_t elapsed_us = now - s_uvc_last_log_time;
+        float actual_fps = (elapsed_us > 0) ?
+            (s_uvc_frames_sent_since_log * 1000000.0f / elapsed_us) : 0;
+        float throughput_kbps = (elapsed_us > 0) ?
+            (s_uvc_bytes_sent_since_log * 8000.0f / elapsed_us) : 0;
+        ESP_LOGI(TAG, "UVC: %.1f fps to host, %.0f kbps, sent=%u dropped=%u polls=%u",
+                 actual_fps, throughput_kbps,
+                 (unsigned)s_uvc_frames_sent_since_log,
+                 (unsigned)s_uvc_frames_dropped_since_log,
+                 (unsigned)s_uvc_fb_get_calls_since_log);
+        s_uvc_last_log_time = now;
+        s_uvc_frames_sent_since_log = 0;
+        s_uvc_frames_dropped_since_log = 0;
+        s_uvc_bytes_sent_since_log = 0;
+        s_uvc_fb_get_calls_since_log = 0;
+        s_uvc_no_frame_count_since_log = 0;
+    }
+}
+
+/**
  * UVC frame get callback - called when host requests a new frame
  * Returns a frame buffer structure or NULL if no frame available
  */
@@ -85,27 +120,24 @@ static uvc_fb_t* uvc_on_fb_get(void *cb_ctx)
 {
     (void)cb_ctx;
 
+    s_uvc_fb_get_calls_since_log++;
+
     // Check if we're supposed to be streaming
     if (s_state != UVC_STATE_STREAMING) {
-        ESP_LOGI(TAG, "fb_get: state not streaming (%d)", s_state);
+        ESP_LOGD(TAG, "fb_get: state not streaming (%d)", s_state);
         return NULL;
     }
     if (!s_host_streaming) {
-        ESP_LOGI(TAG, "fb_get: host not streaming");
+        ESP_LOGD(TAG, "fb_get: host not streaming");
         return NULL;
     }
 
     // Check for new frame in frame buffer
     if (!frame_buffer_has_new_frame()) {
-        // Log occasionally to confirm callback is being invoked
-        static int no_frame_count = 0;
-        if (++no_frame_count % 100 == 0) {
-            ESP_LOGI(TAG, "fb_get: no new frame (checked %d times)", no_frame_count);
-        }
+        s_uvc_no_frame_count_since_log++;
+        uvc_log_status_if_needed();
         return NULL;
     }
-
-    ESP_LOGI(TAG, "fb_get: new frame available");
 
     frame_info_t *frame = frame_buffer_get_latest();
     if (frame == NULL || !frame->valid || frame->size == 0) {
@@ -120,7 +152,9 @@ static uvc_fb_t* uvc_on_fb_get(void *cb_ctx)
         ESP_LOGW(TAG, "Frame too large: %u > %u",
                  (unsigned)frame->size, (unsigned)s_uvc_buffer_size);
         s_stats.frames_dropped++;
+        s_uvc_frames_dropped_since_log++;
         frame_buffer_release(frame);
+        uvc_log_status_if_needed();
         return NULL;
     }
 
@@ -140,8 +174,6 @@ static uvc_fb_t* uvc_on_fb_get(void *cb_ctx)
 
     s_frame_valid = true;
 
-    ESP_LOGI(TAG, "fb_get: returning frame %u bytes", (unsigned)s_current_fb.len);
-
     return &s_current_fb;
 }
 
@@ -159,7 +191,14 @@ static void uvc_on_fb_return(uvc_fb_t *fb, void *cb_ctx)
         s_stats.last_frame_size = fb->len;
         s_stats.last_frame_time = esp_timer_get_time();
 
+        // Update periodic logging stats
+        s_uvc_frames_sent_since_log++;
+        s_uvc_bytes_sent_since_log += fb->len;
+
         s_frame_valid = false;
+
+        // Check if we should log status
+        uvc_log_status_if_needed();
     }
 }
 

@@ -425,6 +425,13 @@ static void stream_task(void *arg)
     const TickType_t min_frame_interval = pdMS_TO_TICKS(16);  // ~60fps max
 
     while (s_streaming) {
+        // Don't consume frames if no WebSocket clients connected
+        // This allows UVC to get frames without competition
+        if (s_ws_client_count == 0) {
+            vTaskDelay(pdMS_TO_TICKS(100));  // Sleep longer when idle
+            continue;
+        }
+
         // Check for new frame - minimal delay for responsiveness
         if (!frame_buffer_has_new_frame()) {
             vTaskDelay(pdMS_TO_TICKS(1));

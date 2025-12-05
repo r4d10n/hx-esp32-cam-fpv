@@ -85,8 +85,12 @@ void app_main(void)
     ESP_ERROR_CHECK(usb_device_start());
 #endif
 
-    // Start web server
+    // Start web server (disabled in UVC-only mode to avoid frame buffer conflicts)
+#ifndef CONFIG_FPV_GS_ENABLE_USB_UVC
     ESP_ERROR_CHECK(web_server_start());
+#else
+    ESP_LOGI(TAG, "Web server disabled in UVC mode");
+#endif
 
     // Print connection info
     ESP_LOGI(TAG, "========================================");

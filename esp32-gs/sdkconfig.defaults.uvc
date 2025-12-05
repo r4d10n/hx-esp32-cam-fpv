@@ -69,14 +69,15 @@ CONFIG_TUSB_PRODUCT="FPV Ground Station"
 # Format: MJPEG
 CONFIG_FORMAT_MJPEG_CAM1=y
 
-# Frame size: VGA 640x480 (single resolution mode)
-CONFIG_FRAMESIZE_VGA=y
-CONFIG_UVC_CAM1_FRAMESIZE_WIDTH=640
-CONFIG_UVC_CAM1_FRAMESIZE_HEIGT=480
-CONFIG_UVC_CAM1_FRAMERATE=15
+# Frame size: SVGA 800x600 (single resolution mode)
+CONFIG_FRAMESIZE_SVGA=y
+CONFIG_UVC_CAM1_FRAMESIZE_WIDTH=800
+CONFIG_UVC_CAM1_FRAMESIZE_HEIGT=600
+CONFIG_UVC_CAM1_FRAMERATE=30
 
-# Transfer mode: Isochronous (default, better compatibility)
+# Transfer mode: Isochronous (better polling rate, compatible with lock-free frame buffer)
 CONFIG_UVC_MODE_ISOC_CAM1=y
+# CONFIG_UVC_MODE_BULK_CAM1 is not set
 
 # Disable multi-resolution (requires TinyUSB macros not in bundled version)
 # CONFIG_UVC_CAM1_MULTI_FRAMESIZE is not set
@@ -84,10 +85,16 @@ CONFIG_UVC_MODE_ISOC_CAM1=y
 # FPV GS Configuration - UVC only, no USB network
 # CONFIG_FPV_GS_ENABLE_USB_NET is not set
 CONFIG_FPV_GS_ENABLE_USB_UVC=y
-CONFIG_FPV_GS_UVC_WIDTH=640
-CONFIG_FPV_GS_UVC_HEIGHT=480
-CONFIG_FPV_GS_UVC_FPS=15
+CONFIG_FPV_GS_UVC_WIDTH=800
+CONFIG_FPV_GS_UVC_HEIGHT=600
+CONFIG_FPV_GS_UVC_FPS=30
 # CONFIG_FPV_GS_UVC_BULK_MODE is not set
+
+# Frame buffer settings (with PSRAM)
+# More buffers to handle 30fps input with slower UVC polling
+CONFIG_FPV_GS_FRAME_BUFFER_COUNT=4
+# Larger frame size for better quality (PSRAM allows it)
+CONFIG_FPV_GS_MAX_FRAME_SIZE=65536
 
 # Enable WiFi AP for web interface access (since USB network is disabled)
 CONFIG_FPV_GS_ENABLE_WIFI_AP=y

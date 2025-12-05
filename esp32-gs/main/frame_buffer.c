@@ -12,6 +12,9 @@ static const char *TAG = "frame_buf";
 #define MAX_FRAME_SIZE CONFIG_FPV_GS_MAX_FRAME_SIZE
 #define MAX_PARTS 128  // Maximum parts per frame
 
+// Watchdog timeout for being_read flag (1 second)
+#define BEING_READ_TIMEOUT_US (1 * 1000000)
+
 // Frame buffer entry
 typedef struct {
     uint8_t *data;              // JPEG data buffer
@@ -23,7 +26,8 @@ typedef struct {
     uint8_t last_part_index;    // Index of last part (when known)
     bool in_progress;           // Currently being written
     bool complete;              // Frame is complete
-    bool being_read;            // Currently being read by WebSocket
+    bool being_read;            // Currently being read by consumer
+    int64_t being_read_since;   // Timestamp when being_read was set (for watchdog)
 } frame_buffer_entry_t;
 
 // Ring buffer state
@@ -42,6 +46,20 @@ static struct {
     uint8_t last_part;
     bool has_last;
 } s_assembly;
+
+// Periodic logging state
+static int64_t s_last_log_time = 0;
+static uint32_t s_last_logged_frame = 0;
+static uint32_t s_frames_since_log = 0;
+static size_t s_bytes_since_log = 0;
+#define LOG_INTERVAL_US (5 * 1000000)  // 5 seconds
+
+// Debug counters for has_new_frame results
+static uint32_t s_has_new_checks = 0;
+static uint32_t s_has_new_not_complete = 0;
+static uint32_t s_has_new_being_read = 0;
+static uint32_t s_has_new_already_served = 0;
+static uint32_t s_has_new_success = 0;
 
 esp_err_t frame_buffer_init(void)
 {
@@ -124,13 +142,43 @@ void frame_buffer_start_frame(uint32_t frame_index)
 {
     xSemaphoreTake(s_mutex, portMAX_DELAY);
 
-    // Find a free buffer slot (not being read)
-    uint8_t idx = s_write_idx;
+    int64_t now = esp_timer_get_time();
+
+    // Watchdog: clear stale being_read flags that have been set too long
+    // This prevents deadlock if a consumer crashes or forgets to release
     for (int i = 0; i < FRAME_BUFFER_COUNT; i++) {
-        if (!s_frames[idx].being_read) {
+        if (s_frames[i].being_read &&
+            (now - s_frames[i].being_read_since) > BEING_READ_TIMEOUT_US) {
+            ESP_LOGW(TAG, "Watchdog: clearing stale being_read on buffer %d (stuck for %lld ms)",
+                     i, (long long)(now - s_frames[i].being_read_since) / 1000);
+            s_frames[i].being_read = false;
+        }
+    }
+
+    // Find a free buffer slot:
+    // - Not currently being read by a consumer
+    // - Not the latest complete frame (protect it for UVC which polls slowly)
+    uint8_t idx = s_write_idx;
+    bool found = false;
+    for (int i = 0; i < FRAME_BUFFER_COUNT; i++) {
+        if (!s_frames[idx].being_read && idx != s_latest_complete_idx) {
+            found = true;
             break;
         }
         idx = (idx + 1) % FRAME_BUFFER_COUNT;
+    }
+
+    // If no free buffer, we must overwrite the latest complete frame
+    // This happens when all buffers are in use and input rate > consumer rate
+    if (!found) {
+        idx = s_write_idx;
+        for (int i = 0; i < FRAME_BUFFER_COUNT; i++) {
+            if (!s_frames[idx].being_read) {
+                break;
+            }
+            idx = (idx + 1) % FRAME_BUFFER_COUNT;
+        }
+        ESP_LOGD(TAG, "No free buffer, overwriting latest complete frame");
     }
 
     // Reset the selected buffer
@@ -273,8 +321,26 @@ bool frame_buffer_commit_frame(void)
             // Move to next buffer
             s_write_idx = (s_write_idx + 1) % FRAME_BUFFER_COUNT;
 
-            ESP_LOGI(TAG, "Frame %lu complete, %u bytes (idx=%d)",
-                     (unsigned long)f->frame_index, (unsigned)f->size, s_latest_complete_idx);
+            // Update periodic logging stats
+            s_frames_since_log++;
+            s_bytes_since_log += f->size;
+            s_last_logged_frame = f->frame_index;
+
+            // Log every 5 seconds with actual FPS
+            int64_t now = esp_timer_get_time();
+            if (now - s_last_log_time >= LOG_INTERVAL_US) {
+                int64_t elapsed_us = now - s_last_log_time;
+                float actual_fps = (elapsed_us > 0) ?
+                    (s_frames_since_log * 1000000.0f / elapsed_us) : 0;
+                float avg_size_kb = (s_frames_since_log > 0) ?
+                    (s_bytes_since_log / s_frames_since_log / 1024.0f) : 0;
+                ESP_LOGI(TAG, "Frame %lu: %.1f fps, %u frames, avg %.1f KB/frame",
+                         (unsigned long)f->frame_index, actual_fps,
+                         (unsigned)s_frames_since_log, avg_size_kb);
+                s_last_log_time = now;
+                s_frames_since_log = 0;
+                s_bytes_since_log = 0;
+            }
         } else {
             valid = false;
             ESP_LOGD(TAG, "Invalid JPEG header for frame %lu", (unsigned long)f->frame_index);
@@ -327,6 +393,7 @@ frame_info_t *frame_buffer_get_latest(void)
     }
 
     f->being_read = true;
+    f->being_read_since = esp_timer_get_time();
     s_last_served_frame = f->frame_index;
 
     info.data = f->data;
@@ -358,12 +425,55 @@ void frame_buffer_release(frame_info_t *frame)
 
 bool frame_buffer_has_new_frame(void)
 {
-    if (s_latest_complete_idx >= FRAME_BUFFER_COUNT) {
+    s_has_new_checks++;
+
+    // Lock-free implementation: use volatile reads
+    // On ESP32, aligned 32-bit reads are atomic
+    // Worst case of race condition is a false negative, which just means poll again
+
+    // Read volatile state without mutex
+    uint8_t idx = s_latest_complete_idx;
+    if (idx >= FRAME_BUFFER_COUNT) {
         return false;
     }
 
-    frame_buffer_entry_t *f = &s_frames[s_latest_complete_idx];
-    return f->complete && !f->being_read && f->frame_index > s_last_served_frame;
+    // Read frame state - these reads may be slightly stale but that's OK
+    // We're just checking "is there likely a new frame?"
+    frame_buffer_entry_t *f = &s_frames[idx];
+    bool complete = f->complete;
+    bool being_read = f->being_read;
+    uint32_t frame_index = f->frame_index;
+    uint32_t last_served = s_last_served_frame;
+
+    bool has_new = false;
+    if (!complete) {
+        s_has_new_not_complete++;
+    } else if (being_read) {
+        s_has_new_being_read++;
+    } else if (frame_index <= last_served) {
+        s_has_new_already_served++;
+    } else {
+        has_new = true;
+        s_has_new_success++;
+    }
+
+    // Periodic debug logging (no mutex needed for stats - just informational)
+    static int64_t last_debug_log = 0;
+    int64_t now = esp_timer_get_time();
+    if (now - last_debug_log >= LOG_INTERVAL_US) {
+        ESP_LOGI(TAG, "has_new_frame: checks=%lu not_complete=%lu being_read=%lu already_served=%lu success=%lu",
+                 (unsigned long)s_has_new_checks,
+                 (unsigned long)s_has_new_not_complete, (unsigned long)s_has_new_being_read,
+                 (unsigned long)s_has_new_already_served, (unsigned long)s_has_new_success);
+        last_debug_log = now;
+        s_has_new_checks = 0;
+        s_has_new_not_complete = 0;
+        s_has_new_being_read = 0;
+        s_has_new_already_served = 0;
+        s_has_new_success = 0;
+    }
+
+    return has_new;
 }
 
 void frame_buffer_get_stats(uint8_t *frames_buffered, size_t *memory_used)

@@ -30,19 +30,19 @@ menu "ESP32 FPV Ground Station Configuration"
     config FPV_GS_FRAME_BUFFER_COUNT
         int "Frame buffer count"
         default 2
-        range 2 5
+        range 2 8
         help
             Number of frame buffers in the ring buffer.
-            Use 2 without PSRAM, 3-5 with PSRAM.
+            Use 2 without PSRAM, 4-8 with PSRAM for smoother streaming.
 
     config FPV_GS_MAX_FRAME_SIZE
         int "Maximum frame size (bytes)"
         default 49152
-        range 16384 131072
+        range 16384 262144
         help
             Maximum size of a single JPEG frame.
-            48KB balances frame size vs memory for WiFi crypto.
-            Use 64KB+ with PSRAM.
+            48KB default without PSRAM.
+            Use 64KB-128KB with PSRAM for higher quality frames.
 
     config FPV_GS_PACKET_QUEUE_SIZE
         int "Packet queue size"
