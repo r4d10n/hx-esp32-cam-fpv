@@ -1,8 +1,8 @@
-## IDF Component Manager Manifest File
+## IDF Component Manager Manifest File - UVC Only Build
+## This configuration is for USB UVC (webcam) only mode
+## To use: cp main/idf_component_uvc.yml main/idf_component.yml
+
 dependencies:
-  # USB NCM networking with esp_netif integration
-  chegewara/usb-netif: "*"
-  espressif/esp_tinyusb: "^1.4.0"
-  # USB Video Class (UVC) device driver
+  # USB Video Class (UVC) device driver - includes TinyUSB
   espressif/usb_device_uvc: "^1.2.0"
   idf: "^5.0"

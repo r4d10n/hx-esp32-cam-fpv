@@ -87,21 +87,25 @@ static uvc_fb_t* uvc_on_fb_get(void *cb_ctx)
 
     // Check if we're supposed to be streaming
     if (s_state != UVC_STATE_STREAMING) {
-        ESP_LOGD(TAG, "fb_get: state not streaming (%d)", s_state);
+        ESP_LOGI(TAG, "fb_get: state not streaming (%d)", s_state);
         return NULL;
     }
     if (!s_host_streaming) {
-        ESP_LOGD(TAG, "fb_get: host not streaming");
+        ESP_LOGI(TAG, "fb_get: host not streaming");
         return NULL;
     }
 
     // Check for new frame in frame buffer
     if (!frame_buffer_has_new_frame()) {
-        // Don't log this - too frequent
+        // Log occasionally to confirm callback is being invoked
+        static int no_frame_count = 0;
+        if (++no_frame_count % 100 == 0) {
+            ESP_LOGI(TAG, "fb_get: no new frame (checked %d times)", no_frame_count);
+        }
         return NULL;
     }
 
-    ESP_LOGD(TAG, "fb_get: new frame available");
+    ESP_LOGI(TAG, "fb_get: new frame available");
 
     frame_info_t *frame = frame_buffer_get_latest();
     if (frame == NULL || !frame->valid || frame->size == 0) {
