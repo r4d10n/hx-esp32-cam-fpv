@@ -273,8 +273,8 @@ bool frame_buffer_commit_frame(void)
             // Move to next buffer
             s_write_idx = (s_write_idx + 1) % FRAME_BUFFER_COUNT;
 
-            ESP_LOGD(TAG, "Frame %lu complete, %u bytes",
-                     (unsigned long)f->frame_index, f->size);
+            ESP_LOGI(TAG, "Frame %lu complete, %u bytes (idx=%d)",
+                     (unsigned long)f->frame_index, (unsigned)f->size, s_latest_complete_idx);
         } else {
             valid = false;
             ESP_LOGD(TAG, "Invalid JPEG header for frame %lu", (unsigned long)f->frame_index);
