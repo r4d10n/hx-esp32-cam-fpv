@@ -495,9 +495,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Filter by air unit MAC address
-    uint8_t air_mac[] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
-    parser.set_mac_filter(air_mac);
+    // Don't filter by MAC - process all data packets and let FEC header validation filter
+    // The MAC filter was rejecting all packets because the capture may use different MACs
+    // parser.set_mac_filter(air_mac);
 
     // Initialize decoder
     TestFecDecoder decoder;
