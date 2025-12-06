@@ -2,6 +2,7 @@
 #include "fec.h"
 #include <cstring>
 #include <algorithm>
+#include <cinttypes>
 
 #ifdef ESP_PLATFORM
 #include "esp_heap_caps.h"
@@ -192,7 +193,7 @@ bool FecDecoder::process_packet(const uint8_t* data, size_t size) {
     uint32_t block_index = header->block_index;
     uint8_t packet_index = header->packet_index;
 
-    LOG_D("Packet: block=%u, pkt=%d, size=%d",
+    LOG_D("Packet: block=%" PRIu32 ", pkt=%d, size=%zu",
           block_index, packet_index, size);
 
     // Track primary vs FEC packets
@@ -248,12 +249,12 @@ bool FecDecoder::decode_block(FecBlock* block) {
 
     if (block->is_complete(m_config.coding_k)) {
         // All primary packets present - no FEC decoding needed
-        LOG_D("Block %u complete, no FEC needed", block->index);
+        LOG_D("Block %" PRIu32 " complete, no FEC needed", block->index);
         m_stats.blocks_complete++;
         success = true;
     } else {
         // Need FEC recovery
-        LOG_D("Block %u needs FEC: %d primary + %d fec packets",
+        LOG_D("Block %" PRIu32 " needs FEC: %d primary + %d fec packets",
               block->index, block->primary_count, block->fec_count);
 
         // Build source pointer array (mix of primary and FEC packets)
@@ -282,7 +283,7 @@ bool FecDecoder::decode_block(FecBlock* block) {
                     fec_idx++;
                 } else {
                     // Not enough packets
-                    LOG_W("Block %u: not enough packets for FEC", block->index);
+                    LOG_W("Block %" PRIu32 ": not enough packets for FEC", block->index);
                     m_stats.blocks_failed++;
                     block->is_processed = true;
                     return false;
@@ -385,22 +386,22 @@ void FecDecoder::print_stats() const {
 // Statistics print implementation
 void FecDecoderStats::print() const {
     printf("\n=== FEC Decoder Statistics ===\n");
-    printf("Packets processed: %u\n", packets_processed);
-    printf("  Primary packets: %u\n", primary_packets);
-    printf("  FEC packets:     %u\n", fec_packets);
-    printf("  Duplicate:       %u\n", duplicate_packets);
-    printf("  Invalid:         %u\n", invalid_packets);
-    printf("  Filtered:        %u\n", filtered_packets);
-    printf("FEC blocks complete:  %u\n", blocks_complete);
-    printf("FEC blocks recovered: %u\n", blocks_recovered);
-    printf("FEC blocks failed:    %u\n", blocks_failed);
-    printf("FEC blocks skipped:   %u\n", blocks_skipped);
-    printf("Frames decoded:    %u\n", frames_decoded);
-    printf("Frames incomplete: %u\n", frames_incomplete);
-    printf("Bytes received:    %llu\n", (unsigned long long)bytes_received);
-    printf("Bytes decoded:     %llu\n", (unsigned long long)bytes_decoded);
+    printf("Packets processed: %" PRIu32 "\n", packets_processed);
+    printf("  Primary packets: %" PRIu32 "\n", primary_packets);
+    printf("  FEC packets:     %" PRIu32 "\n", fec_packets);
+    printf("  Duplicate:       %" PRIu32 "\n", duplicate_packets);
+    printf("  Invalid:         %" PRIu32 "\n", invalid_packets);
+    printf("  Filtered:        %" PRIu32 "\n", filtered_packets);
+    printf("FEC blocks complete:  %" PRIu32 "\n", blocks_complete);
+    printf("FEC blocks recovered: %" PRIu32 "\n", blocks_recovered);
+    printf("FEC blocks failed:    %" PRIu32 "\n", blocks_failed);
+    printf("FEC blocks skipped:   %" PRIu32 "\n", blocks_skipped);
+    printf("Frames decoded:    %" PRIu32 "\n", frames_decoded);
+    printf("Frames incomplete: %" PRIu32 "\n", frames_incomplete);
+    printf("Bytes received:    %" PRIu64 "\n", bytes_received);
+    printf("Bytes decoded:     %" PRIu64 "\n", bytes_decoded);
     if (decode_time_us > 0) {
-        printf("Last decode time:  %u us\n", decode_time_us);
+        printf("Last decode time:  %" PRIu32 " us\n", decode_time_us);
     }
     printf("==============================\n\n");
 }

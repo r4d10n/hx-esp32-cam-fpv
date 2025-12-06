@@ -1,6 +1,7 @@
 #include "block_manager.h"
 #include <cstring>
 #include <algorithm>
+#include <cinttypes>
 
 #ifdef ESP_PLATFORM
 #include "esp_heap_caps.h"
@@ -162,7 +163,7 @@ FecBlock* BlockManager::find_or_create_block(uint32_t block_index) {
             m_blocks[i].is_active = true;
             m_blocks[i].first_packet_time_ms = get_time_ms();
             m_active_count++;
-            LOG_D("Created new block %u in slot %d", block_index, i);
+            LOG_D("Created new block %" PRIu32 " in slot %d", block_index, (int)i);
             return &m_blocks[i];
         }
     }
@@ -177,7 +178,7 @@ FecBlock* BlockManager::find_or_create_block(uint32_t block_index) {
         }
     }
 
-    LOG_W("Block pool full, evicting block %u for %u",
+    LOG_W("Block pool full, evicting block %" PRIu32 " for %" PRIu32,
           m_blocks[oldest_idx].index, block_index);
     release_block(&m_blocks[oldest_idx]);
 
@@ -199,11 +200,11 @@ FecBlock* BlockManager::add_packet(uint32_t block_index, uint8_t packet_index,
         // Allow some tolerance for out-of-order packets
         if (m_next_expected_block - block_index > MAX_BLOCKS_IN_FLIGHT * 2) {
             // Very old block, likely a restart - reset tracking
-            LOG_W("Very old block %u (expected %u) - resetting",
+            LOG_W("Very old block %" PRIu32 " (expected %" PRIu32 ") - resetting",
                   block_index, m_next_expected_block);
             m_next_expected_block = block_index;
         } else {
-            LOG_D("Old block %u (expected %u) - dropping", block_index, m_next_expected_block);
+            LOG_D("Old block %" PRIu32 " (expected %" PRIu32 ") - dropping", block_index, m_next_expected_block);
             return nullptr;
         }
     }
@@ -218,7 +219,7 @@ FecBlock* BlockManager::add_packet(uint32_t block_index, uint8_t packet_index,
     if (packet_index < m_coding_k) {
         // Primary packet
         if (block->primary_mask & (1u << packet_index)) {
-            LOG_D("Duplicate primary packet %d in block %u", packet_index, block_index);
+            LOG_D("Duplicate primary packet %d in block %" PRIu32, packet_index, block_index);
             return nullptr; // Duplicate
         }
 
@@ -233,7 +234,7 @@ FecBlock* BlockManager::add_packet(uint32_t block_index, uint8_t packet_index,
         block->primary_sizes[packet_index] = size;
         block->primary_mask |= (1u << packet_index);
         block->primary_count++;
-        LOG_D("Added primary packet %d to block %u (%d/%d)",
+        LOG_D("Added primary packet %d to block %" PRIu32 " (%d/%d)",
               packet_index, block_index, block->primary_count, m_coding_k);
     } else {
         // FEC packet
@@ -244,7 +245,7 @@ FecBlock* BlockManager::add_packet(uint32_t block_index, uint8_t packet_index,
         }
 
         if (block->fec_mask & (1u << fec_idx)) {
-            LOG_D("Duplicate FEC packet %d in block %u", packet_index, block_index);
+            LOG_D("Duplicate FEC packet %d in block %" PRIu32, packet_index, block_index);
             return nullptr; // Duplicate
         }
 
@@ -259,7 +260,7 @@ FecBlock* BlockManager::add_packet(uint32_t block_index, uint8_t packet_index,
         block->fec_sizes[fec_idx] = size;
         block->fec_mask |= (1u << fec_idx);
         block->fec_count++;
-        LOG_D("Added FEC packet %d to block %u (%d FEC packets)",
+        LOG_D("Added FEC packet %d to block %" PRIu32 " (%d FEC packets)",
               packet_index, block_index, block->fec_count);
     }
 
@@ -326,7 +327,7 @@ size_t BlockManager::expire_blocks(uint32_t current_time_ms, uint32_t timeout_ms
         if (block->is_active && !block->is_processed) {
             uint32_t age = current_time_ms - block->first_packet_time_ms;
             if (age > timeout_ms) {
-                LOG_D("Expiring block %u (age %u ms, %d/%d packets)",
+                LOG_D("Expiring block %" PRIu32 " (age %" PRIu32 " ms, %d/%d packets)",
                       block->index, age, block->total_packets(), m_coding_k);
                 release_block(block);
                 expired++;
@@ -343,7 +344,7 @@ size_t BlockManager::skip_to_block(uint32_t new_block_index) {
     for (size_t i = 0; i < MAX_BLOCKS_IN_FLIGHT; i++) {
         FecBlock* block = &m_blocks[i];
         if (block->is_active && block->index < new_block_index) {
-            LOG_D("Skipping block %u (new index %u)", block->index, new_block_index);
+            LOG_D("Skipping block %" PRIu32 " (new index %" PRIu32 ")", block->index, new_block_index);
             release_block(block);
             skipped++;
         }

@@ -1,6 +1,7 @@
 #include "frame_assembler.h"
 #include <cstring>
 #include <algorithm>
+#include <cinttypes>
 
 #ifdef ESP_PLATFORM
 #include "esp_heap_caps.h"
@@ -115,7 +116,7 @@ void FrameAssembler::process_packet(const uint8_t* data, size_t size) {
 
 void FrameAssembler::process_video_packet(const uint8_t* data, size_t size) {
     if (size < MIN_VIDEO_PACKET_SIZE) {
-        LOG_W("Video packet too small: %d < %d", size, MIN_VIDEO_PACKET_SIZE);
+        LOG_W("Video packet too small: %zu < %zu", size, MIN_VIDEO_PACKET_SIZE);
         return;
     }
 
@@ -130,14 +131,14 @@ void FrameAssembler::process_video_packet(const uint8_t* data, size_t size) {
     size_t payload_size = size - sizeof(VideoPacketHeader);
     const uint8_t* payload = data + sizeof(VideoPacketHeader);
 
-    LOG_D("Video packet: frame=%u part=%d last=%d size=%d",
+    LOG_D("Video packet: frame=%" PRIu32 " part=%d last=%d size=%zu",
           frame_index, part_index, is_last, payload_size);
 
     // Check if this is a new frame
     if (frame_index != m_current_frame.frame_index) {
         // Flush incomplete frame if we had one
         if (m_current_frame.parts_received > 0 && !m_current_frame.complete) {
-            LOG_D("Incomplete frame %u (%d parts)", m_current_frame.frame_index,
+            LOG_D("Incomplete frame %" PRIu32 " (%d parts)", m_current_frame.frame_index,
                   m_current_frame.parts_received);
             m_frames_incomplete++;
 
@@ -156,12 +157,12 @@ void FrameAssembler::process_video_packet(const uint8_t* data, size_t size) {
         m_current_frame.resolution = resolution;
         memset(m_part_offsets, 0, sizeof(m_part_offsets));
 
-        LOG_D("Starting new frame %u", frame_index);
+        LOG_D("Starting new frame %" PRIu32, frame_index);
     }
 
     // Check if we already have this part
     if (m_current_frame.has_part(part_index)) {
-        LOG_D("Duplicate part %d for frame %u", part_index, frame_index);
+        LOG_D("Duplicate part %d for frame %" PRIu32, part_index, frame_index);
         return;
     }
 
@@ -193,7 +194,7 @@ void FrameAssembler::process_video_packet(const uint8_t* data, size_t size) {
 
         // Check buffer bounds
         if (offset + payload_size > m_frame_buffer_size) {
-            LOG_E("Frame buffer overflow: offset=%d + size=%d > %d",
+            LOG_E("Frame buffer overflow: offset=%zu + size=%zu > %zu",
                   offset, payload_size, m_frame_buffer_size);
             return;
         }
@@ -206,7 +207,7 @@ void FrameAssembler::process_video_packet(const uint8_t* data, size_t size) {
         m_current_frame.parts_received++;
         m_current_frame.current_size = offset + payload_size;
 
-        LOG_D("Added part %d, frame size now %d bytes",
+        LOG_D("Added part %d, frame size now %zu bytes",
               part_index, m_current_frame.current_size);
     }
 
@@ -221,7 +222,7 @@ void FrameAssembler::process_video_packet(const uint8_t* data, size_t size) {
 void FrameAssembler::dispatch_frame() {
     if (!m_current_frame.complete) return;
 
-    LOG_D("Dispatching complete frame %u (%d bytes, %d parts)",
+    LOG_D("Dispatching complete frame %" PRIu32 " (%zu bytes, %d parts)",
           m_current_frame.frame_index,
           m_current_frame.current_size,
           m_current_frame.parts_received);
@@ -239,7 +240,7 @@ void FrameAssembler::dispatch_frame() {
 
 bool FrameAssembler::flush() {
     if (m_current_frame.parts_received > 0 && !m_current_frame.complete) {
-        LOG_D("Flushing incomplete frame %u (%d parts)",
+        LOG_D("Flushing incomplete frame %" PRIu32 " (%d parts)",
               m_current_frame.frame_index, m_current_frame.parts_received);
         m_frames_incomplete++;
         m_current_frame.reset();
