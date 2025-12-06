@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        "src/fec_decoder.cpp"
+        "src/block_manager.cpp"
+        "src/frame_assembler.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        common
+)
