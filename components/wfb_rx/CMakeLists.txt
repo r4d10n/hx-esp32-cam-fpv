@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        "src/wfb_crypto.cpp"
+        "src/wfb_rx.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        common
+        mbedtls
+)
