@@ -5,5 +5,5 @@ idf_component_register(
         "include"
     REQUIRES
         esp_netif
-        tinyusb
+        esp_event
 )

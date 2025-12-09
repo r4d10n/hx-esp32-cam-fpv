@@ -75,10 +75,10 @@ static struct {
     // Statistics
     uint32_t rtp_sequence;
     uint32_t frame_count;
-} g_bridge = {0};
+} g_bridge;
 
 // Forward declarations
-static void on_wfb_data(const uint8_t* data, size_t len, void* user_data);
+static void on_wfb_data(const uint8_t* data, size_t len, uint8_t flags);
 static void process_rtp_packet(const uint8_t* data, size_t len);
 static void process_h264_nal(const uint8_t* data, size_t len, uint32_t timestamp);
 static void process_h265_nal(const uint8_t* data, size_t len, uint32_t timestamp);
@@ -107,15 +107,21 @@ int wfb_bridge_init(const wfb_bridge_config_t* config)
 
     // Initialize WFB receiver
     g_bridge.receiver = new WfbReceiver();
-    if (!g_bridge.receiver->init(g_bridge.config.gs_key_path)) {
+    if (!g_bridge.receiver->init(true)) {  // use PSRAM
         ESP_LOGE(TAG, "Failed to initialize WFB receiver");
         delete g_bridge.receiver;
         g_bridge.receiver = nullptr;
         return -1;
     }
 
+    // Load key if path specified
+    if (g_bridge.config.gs_key_path) {
+        // Key loading would happen here from filesystem
+        ESP_LOGI(TAG, "Key path: %s (loading not implemented)", g_bridge.config.gs_key_path);
+    }
+
     // Set data callback
-    g_bridge.receiver->set_data_callback(on_wfb_data, nullptr);
+    g_bridge.receiver->set_data_callback(on_wfb_data);
 
     // Initialize WebSocket server
     video_ws_server_config_t ws_config = {
@@ -208,8 +214,10 @@ void wfb_bridge_process_packet(const uint8_t* data, size_t len,
 /**
  * @brief Callback when WFB receiver outputs decoded data
  */
-static void on_wfb_data(const uint8_t* data, size_t len, void* user_data)
+static void on_wfb_data(const uint8_t* data, size_t len, uint8_t flags)
 {
+    (void)flags;  // unused for now
+
     if (len < sizeof(rtp_header_t)) {
         return;
     }
@@ -498,9 +506,8 @@ void wfb_bridge_get_stats(wfb_bridge_stats_t* stats)
     stats->clients_connected = video_ws_server_get_client_count();
 
     if (g_bridge.receiver) {
-        WfbRxStats rx_stats;
-        g_bridge.receiver->get_stats(&rx_stats);
-        stats->fec_recovered = rx_stats.fec_recovered;
+        const WfbRxStats& rx_stats = g_bridge.receiver->get_stats();
+        stats->fec_recovered = rx_stats.packets_fec_recovered;
     }
 }
 

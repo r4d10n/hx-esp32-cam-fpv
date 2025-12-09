@@ -43,7 +43,7 @@ static struct {
     TaskHandle_t process_task;
     bool initialized;
     bool running;
-} g_gs = {0};
+} g_gs;
 
 // Forward declarations
 static void video_frame_callback(const uint8_t* data, size_t len,
@@ -61,7 +61,6 @@ static esp_err_t index_handler(httpd_req_t* req);
 static esp_err_t player_js_handler(httpd_req_t* req);
 static esp_err_t stats_handler(httpd_req_t* req);
 static esp_err_t config_handler(httpd_req_t* req);
-static esp_err_t ws_video_handler(httpd_req_t* req);
 
 /**
  * @brief Initialize ground station
@@ -287,7 +286,7 @@ static void video_frame_callback(const uint8_t* data, size_t len,
         .dts = metadata->timestamp,
         .width = metadata->width,
         .height = metadata->height,
-        .flags = metadata->is_keyframe ? FB_FLAG_KEYFRAME : 0,
+        .flags = (uint8_t)(metadata->is_keyframe ? FB_FLAG_KEYFRAME : 0),
         .nal_type = 0
     };
 

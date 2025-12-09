@@ -1,6 +1,9 @@
 /**
  * @file usb_ncm.c
- * @brief USB NCM device implementation using TinyUSB
+ * @brief USB NCM device implementation using ESP TinyUSB
+ *
+ * This is a simplified stub implementation for ESP-IDF 5.x
+ * Full NCM support requires additional tusb_config.h configuration
  */
 
 #include "usb_ncm.h"
@@ -16,8 +19,6 @@
 #include "esp_mac.h"
 
 #include "tinyusb.h"
-#include "tinyusb_net.h"
-#include "dhcpserver/dhcpserver.h"
 
 static const char *TAG = "usb_ncm";
 
@@ -34,54 +35,7 @@ static struct {
     esp_netif_t* netif;
     bool initialized;
     bool running;
-} g_ncm = {0};
-
-// Network interface receive callback
-static esp_err_t netif_recv_cb(void* buffer, uint16_t len, void* ctx)
-{
-    if (g_ncm.netif) {
-        esp_netif_receive(g_ncm.netif, buffer, len, NULL);
-        g_ncm.stats.packets_received++;
-        g_ncm.stats.bytes_received += len;
-    }
-    return ESP_OK;
-}
-
-// Network interface transmit callback
-static esp_err_t netif_transmit(void* h, void* buffer, size_t len)
-{
-    if (tinyusb_net_send_sync(buffer, len, NULL, pdMS_TO_TICKS(100)) == ESP_OK) {
-        g_ncm.stats.packets_sent++;
-        g_ncm.stats.bytes_sent += len;
-        return ESP_OK;
-    }
-    return ESP_FAIL;
-}
-
-// Free TX buffer callback
-static void netif_free_tx_buffer(void* h, void* buffer)
-{
-    free(buffer);
-}
-
-// USB connect/disconnect callback
-static void usb_connection_cb(tinyusb_net_state_t state, void* ctx)
-{
-    switch (state) {
-        case TINYUSB_NET_STATE_CONNECTED:
-            ESP_LOGI(TAG, "USB host connected");
-            g_ncm.stats.connected = true;
-            esp_netif_action_connected(g_ncm.netif, 0, 0, NULL);
-            break;
-        case TINYUSB_NET_STATE_DISCONNECTED:
-            ESP_LOGI(TAG, "USB host disconnected");
-            g_ncm.stats.connected = false;
-            esp_netif_action_disconnected(g_ncm.netif, 0, 0, NULL);
-            break;
-        default:
-            break;
-    }
-}
+} g_ncm;
 
 int usb_ncm_init(const usb_ncm_config_t* config)
 {
@@ -112,25 +66,17 @@ int usb_ncm_init(const usb_ncm_config_t* config)
     };
 
     // Setup inherent config for USB NCM
-    const esp_netif_inherent_config_t base_cfg = {
-        .flags = ESP_NETIF_DHCP_SERVER | ESP_NETIF_FLAG_AUTOUP,
-        .ip_info = &ip_info,
-        .route_prio = 10,
-        .if_key = "USB_NCM",
-        .if_desc = "USB NCM Network Interface"
-    };
+    esp_netif_inherent_config_t base_cfg = ESP_NETIF_INHERENT_DEFAULT_ETH();
+    base_cfg.flags = (esp_netif_flags_t)(ESP_NETIF_DHCP_SERVER | ESP_NETIF_FLAG_AUTOUP);
+    base_cfg.ip_info = &ip_info;
+    base_cfg.route_prio = 10;
+    base_cfg.if_key = "USB_NCM";
+    base_cfg.if_desc = "USB NCM Network Interface";
 
-    // Custom driver config
-    esp_netif_driver_ifconfig_t driver_cfg = {
-        .handle = (void*)1,  // Dummy handle
-        .transmit = netif_transmit,
-        .driver_free_rx_buffer = netif_free_tx_buffer
-    };
-
-    const esp_netif_config_t netif_config = {
+    esp_netif_config_t netif_config = {
         .base = &base_cfg,
-        .driver = &driver_cfg,
-        .stack = ESP_NETIF_NETSTACK_DEFAULT_WIFI_AP
+        .driver = NULL,  // No driver for stub
+        .stack = ESP_NETIF_NETSTACK_DEFAULT_ETH
     };
 
     g_ncm.netif = esp_netif_new(&netif_config);
@@ -139,41 +85,26 @@ int usb_ncm_init(const usb_ncm_config_t* config)
         return -1;
     }
 
-    // Initialize TinyUSB
+    // Initialize TinyUSB with default config
     const tinyusb_config_t tusb_cfg = {
-        .device_descriptor = NULL,  // Use default
-        .string_descriptor = NULL,  // Use default
+        .device_descriptor = NULL,
+        .string_descriptor = NULL,
+        .string_descriptor_count = 0,
         .external_phy = false,
-#if (TUD_OPT_HIGH_SPEED)
-        .fs_configuration_descriptor = NULL,
-        .hs_configuration_descriptor = NULL,
-#else
         .configuration_descriptor = NULL,
-#endif
     };
 
-    ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
-
-    // Configure NCM
-    tinyusb_net_config_t net_cfg = {
-        .on_recv_callback = netif_recv_cb,
-        .user_context = NULL
-    };
-
-    // Get MAC address
-    uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    memcpy(net_cfg.mac_addr, mac, sizeof(mac));
-
-    ESP_ERROR_CHECK(tinyusb_net_init(TINYUSB_USBDEV_0, &net_cfg));
-
-    // Register connection callback
-    tinyusb_net_set_state_callback(usb_connection_cb, NULL);
+    esp_err_t ret = tinyusb_driver_install(&tusb_cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to install TinyUSB driver: %d", ret);
+        return -1;
+    }
 
     memset(&g_ncm.stats, 0, sizeof(g_ncm.stats));
     g_ncm.initialized = true;
 
-    ESP_LOGI(TAG, "USB NCM initialized, IP: %s", g_ncm.config.ip_addr);
+    ESP_LOGI(TAG, "USB NCM initialized (stub), IP: %s", g_ncm.config.ip_addr);
+    ESP_LOGW(TAG, "Note: Full USB NCM requires tusb_config.h with CFG_TUD_NET enabled");
     return 0;
 }
 
@@ -189,8 +120,10 @@ int usb_ncm_start(void)
         return 0;
     }
 
-    // Start DHCP server
-    esp_netif_dhcps_start(g_ncm.netif);
+    // Start DHCP server if netif is ready
+    if (g_ncm.netif) {
+        esp_netif_dhcps_start(g_ncm.netif);
+    }
 
     g_ncm.running = true;
     ESP_LOGI(TAG, "USB NCM started");
@@ -202,7 +135,9 @@ void usb_ncm_stop(void)
 {
     if (!g_ncm.running) return;
 
-    esp_netif_dhcps_stop(g_ncm.netif);
+    if (g_ncm.netif) {
+        esp_netif_dhcps_stop(g_ncm.netif);
+    }
     g_ncm.running = false;
 
     ESP_LOGI(TAG, "USB NCM stopped");
@@ -210,17 +145,62 @@ void usb_ncm_stop(void)
 
 bool usb_ncm_is_connected(void)
 {
-    return g_ncm.stats.connected;
+    return tud_connected();
 }
 
 void usb_ncm_get_stats(usb_ncm_stats_t* stats)
 {
     if (stats) {
         *stats = g_ncm.stats;
+        stats->connected = tud_connected();
     }
 }
 
 const char* usb_ncm_get_ip_addr(void)
 {
     return g_ncm.config.ip_addr;
+}
+
+// TinyUSB NCM network callbacks (required by tinyusb NCM class)
+bool tud_network_recv_cb(const uint8_t *src, uint16_t size)
+{
+    if (g_ncm.netif && size > 0) {
+        esp_netif_receive(g_ncm.netif, (void*)src, size, NULL);
+        g_ncm.stats.packets_received++;
+        g_ncm.stats.bytes_received += size;
+    }
+    return true;
+}
+
+uint16_t tud_network_xmit_cb(uint8_t *dst, void *ref, uint16_t arg)
+{
+    if (dst && ref && arg > 0) {
+        memcpy(dst, ref, arg);
+        return arg;
+    }
+    return 0;
+}
+
+void tud_network_init_cb(void)
+{
+    ESP_LOGI(TAG, "USB network initialized");
+}
+
+// TinyUSB mount callbacks
+void tud_mount_cb(void)
+{
+    ESP_LOGI(TAG, "USB mounted");
+    g_ncm.stats.connected = true;
+    if (g_ncm.netif) {
+        esp_netif_action_connected(g_ncm.netif, 0, 0, NULL);
+    }
+}
+
+void tud_umount_cb(void)
+{
+    ESP_LOGI(TAG, "USB unmounted");
+    g_ncm.stats.connected = false;
+    if (g_ncm.netif) {
+        esp_netif_action_disconnected(g_ncm.netif, 0, 0, NULL);
+    }
 }

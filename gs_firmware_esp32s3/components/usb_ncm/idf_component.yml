@@ -1,0 +1,5 @@
+## USB NCM Component Dependencies
+dependencies:
+  espressif/esp_tinyusb: "^1.4.0"
+  idf:
+    version: ">=5.0.0"

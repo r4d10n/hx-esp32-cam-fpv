@@ -5,7 +5,4 @@ idf_component_register(
         "."
     REQUIRES
         gs_main
-    EMBED_FILES
-        "../web/index.html"
-        "../web/player.js"
 )

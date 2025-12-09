@@ -13,9 +13,12 @@
 #include "mbedtls/chachapoly.h"
 #include "mbedtls/chacha20.h"
 #include "mbedtls/poly1305.h"
-#include "mbedtls/curve25519.h"
+#include "mbedtls/ecdh.h"
+#include "mbedtls/ecp.h"
 #include "mbedtls/hkdf.h"
 #include "mbedtls/sha512.h"
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/entropy.h"
 #include "esp_log.h"
 static const char* TAG = "wfb_crypto";
 #define LOG_E(fmt, ...) ESP_LOGE(TAG, fmt, ##__VA_ARGS__)
@@ -307,7 +310,7 @@ bool wfb_crypto_process_session(wfb_crypto_ctx_t* ctx,
     ctx->fec_n = session_data.fec_n;
     ctx->session_valid = true;
 
-    LOG_I("New session: epoch=%" PRIu64 " ch=0x%08X k=%d n=%d",
+    LOG_I("New session: epoch=%" PRIu64 " ch=0x%08" PRIx32 " k=%d n=%d",
           ctx->session_epoch, ctx->channel_id, ctx->fec_k, ctx->fec_n);
 
     return true;

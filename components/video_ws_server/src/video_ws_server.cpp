@@ -138,7 +138,7 @@ static esp_err_t ws_handler(httpd_req_t* req)
 /**
  * @brief Callback when client connects/disconnects
  */
-static void ws_open_callback(httpd_handle_t hd, int sockfd)
+static esp_err_t ws_open_callback(httpd_handle_t hd, int sockfd)
 {
     ESP_LOGI(TAG, "WebSocket client connected: fd=%d", sockfd);
 
@@ -146,6 +146,7 @@ static void ws_open_callback(httpd_handle_t hd, int sockfd)
     if (idx >= 0 && g_server.client_callback) {
         g_server.client_callback(sockfd, true);
     }
+    return ESP_OK;
 }
 
 static void ws_close_callback(httpd_handle_t hd, int sockfd)

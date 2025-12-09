@@ -12,8 +12,12 @@
  */
 
 #include <stdio.h>
+#include <inttypes.h>
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "gs_main.h"
 
 static const char* TAG = "main";
@@ -25,11 +29,11 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "=================================");
 
     // Print memory info
-    ESP_LOGI(TAG, "Free heap: %" PRIu32 " bytes", esp_get_free_heap_size());
-    ESP_LOGI(TAG, "Free internal: %" PRIu32 " bytes",
-             heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-    ESP_LOGI(TAG, "Free PSRAM: %" PRIu32 " bytes",
-             heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    ESP_LOGI(TAG, "Free heap: %lu bytes", (unsigned long)esp_get_free_heap_size());
+    ESP_LOGI(TAG, "Free internal: %lu bytes",
+             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    ESP_LOGI(TAG, "Free PSRAM: %lu bytes",
+             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     // Initialize ground station with default config
     gs_config_t config = {

@@ -82,17 +82,16 @@ static struct {
 
     bool initialized;
     bool running;
-} g_rx = {0};
+} g_rx;
 
 // Forward declarations
 static void process_esp32fpv_packet(const uint8_t* data, size_t len);
 static void process_wfb_packet(const uint8_t* data, size_t len, int8_t rssi, int8_t noise);
 static rx_protocol_t detect_protocol(const uint8_t* data, size_t len);
-static void on_wfb_data(const uint8_t* data, size_t len, void* user_data);
+static void on_wfb_data(const uint8_t* data, size_t len, uint8_t flags);
 static void on_esp_frame_decoded(const uint8_t* data, size_t len, uint32_t frame_index,
-                                  uint8_t resolution, void* user_data);
-static void on_esp_telemetry(const uint8_t* data, size_t len, void* user_data);
-static void on_esp_osd(const uint8_t* data, size_t len, void* user_data);
+                                  uint8_t resolution);
+static void on_esp_data(const uint8_t* data, size_t size, PacketType type);
 static void update_fps_stats(void);
 
 /**
@@ -139,10 +138,10 @@ int unified_rx_init(const rx_config_t* config)
 
     // Initialize WFB-NG receiver
     g_rx.wfb_rx = new WfbReceiver();
-    if (!g_rx.wfb_rx->init(g_rx.config.gs_key_path)) {
+    if (!g_rx.wfb_rx->init(true)) {  // use PSRAM
         ESP_LOGW(TAG, "WFB-NG init failed (continuing without encryption support)");
     }
-    g_rx.wfb_rx->set_data_callback(on_wfb_data, nullptr);
+    g_rx.wfb_rx->set_data_callback(on_wfb_data);
 
     // Initialize ESP32-FPV FEC decoder
     FecDecoderConfig fec_config = {
@@ -155,24 +154,20 @@ int unified_rx_init(const rx_config_t* config)
     };
 
     g_rx.esp_fec = new FecDecoder();
-    if (g_rx.esp_fec->init(fec_config) != 0) {
+    if (!g_rx.esp_fec->init(fec_config)) {
         ESP_LOGE(TAG, "Failed to init ESP32-FPV FEC decoder");
         delete g_rx.wfb_rx;
         free(g_rx.frame_buffer);
         return -1;
     }
+    g_rx.esp_fec->set_frame_callback(on_esp_frame_decoded);
+    g_rx.esp_fec->set_data_callback(on_esp_data);
 
-    // Initialize frame assembler
+    // Initialize frame assembler (used internally by FecDecoder)
     g_rx.frame_assembler = new FrameAssembler();
-    FrameAssemblerConfig fa_config = {
-        .max_frame_size = MAX_FRAME_SIZE,
-        .use_psram = true,
-        .timeout_ms = 200
-    };
-    g_rx.frame_assembler->init(fa_config);
-    g_rx.frame_assembler->set_frame_callback(on_esp_frame_decoded, nullptr);
-    g_rx.frame_assembler->set_telemetry_callback(on_esp_telemetry, nullptr);
-    g_rx.frame_assembler->set_osd_callback(on_esp_osd, nullptr);
+    g_rx.frame_assembler->init(true);  // use PSRAM
+    g_rx.frame_assembler->set_frame_callback(on_esp_frame_decoded);
+    g_rx.frame_assembler->set_data_callback(on_esp_data);
 
 #ifdef ESP_PLATFORM
     g_rx.mutex = xSemaphoreCreateMutex();
@@ -339,22 +334,13 @@ static void process_esp32fpv_packet(const uint8_t* data, size_t len)
     const uint8_t* payload = data + IEEE80211_HDR_LEN;
     size_t payload_len = len - IEEE80211_HDR_LEN;
 
-    // Parse FEC header
-    uint32_t block_index = (payload[0] << 24) | (payload[1] << 16) |
-                           (payload[2] << 8) | payload[3];
-    uint8_t packet_index = payload[4];
-
-    // Pass to FEC decoder
-    const uint8_t* fec_payload = payload + ESP32FPV_FEC_HEADER_SIZE;
-    size_t fec_payload_len = payload_len - ESP32FPV_FEC_HEADER_SIZE;
-
-    // Add to FEC decoder block
-    if (g_rx.esp_fec->add_packet(block_index, packet_index, fec_payload, fec_payload_len) == 0) {
+    // Pass to FEC decoder (it handles the FEC header internally)
+    if (g_rx.esp_fec->process_packet(payload, payload_len)) {
         g_rx.stats.packets_valid++;
-
-        // Try to decode ready blocks
-        g_rx.esp_fec->process();
     }
+
+    // Process ready blocks
+    g_rx.esp_fec->process();
 }
 
 /**
@@ -371,7 +357,7 @@ static void process_wfb_packet(const uint8_t* data, size_t len, int8_t rssi, int
 /**
  * @brief Callback when WFB-NG data is decoded
  */
-static void on_wfb_data(const uint8_t* data, size_t len, void* user_data)
+static void on_wfb_data(const uint8_t* data, size_t len, uint8_t flags)
 {
     if (!g_rx.video_cb || len < 2) return;
 
@@ -381,7 +367,8 @@ static void on_wfb_data(const uint8_t* data, size_t len, void* user_data)
     // Check for RTP header (version 2)
     uint8_t version = (data[0] >> 6) & 0x03;
 
-    rx_video_metadata_t metadata = {0};
+    rx_video_metadata_t metadata;
+    memset(&metadata, 0, sizeof(metadata));
     const uint8_t* video_data = data;
     size_t video_len = len;
 
@@ -438,13 +425,14 @@ static void on_wfb_data(const uint8_t* data, size_t len, void* user_data)
  * @brief Callback when ESP32-FPV frame is decoded
  */
 static void on_esp_frame_decoded(const uint8_t* data, size_t len, uint32_t frame_index,
-                                  uint8_t resolution, void* user_data)
+                                  uint8_t resolution)
 {
     if (!g_rx.video_cb || len == 0) return;
 
     g_rx.stats.frames_complete++;
 
-    rx_video_metadata_t metadata = {0};
+    rx_video_metadata_t metadata;
+    memset(&metadata, 0, sizeof(metadata));
     metadata.codec = CODEC_MJPEG;
     metadata.frame_index = frame_index;
     metadata.is_keyframe = true;  // All MJPEG frames are keyframes
@@ -468,22 +456,23 @@ static void on_esp_frame_decoded(const uint8_t* data, size_t len, uint32_t frame
 }
 
 /**
- * @brief Callback for ESP32-FPV telemetry
+ * @brief Callback for ESP32-FPV telemetry/OSD data
  */
-static void on_esp_telemetry(const uint8_t* data, size_t len, void* user_data)
+static void on_esp_data(const uint8_t* data, size_t size, PacketType type)
 {
-    if (g_rx.telemetry_cb) {
-        g_rx.telemetry_cb(data, len, g_rx.telemetry_cb_user);
-    }
-}
-
-/**
- * @brief Callback for ESP32-FPV OSD
- */
-static void on_esp_osd(const uint8_t* data, size_t len, void* user_data)
-{
-    if (g_rx.osd_cb) {
-        g_rx.osd_cb(data, len, g_rx.osd_cb_user);
+    switch (type) {
+        case PacketType::Telemetry:
+            if (g_rx.telemetry_cb) {
+                g_rx.telemetry_cb(data, size, g_rx.telemetry_cb_user);
+            }
+            break;
+        case PacketType::OSD:
+            if (g_rx.osd_cb) {
+                g_rx.osd_cb(data, size, g_rx.osd_cb_user);
+            }
+            break;
+        default:
+            break;
     }
 }
 
