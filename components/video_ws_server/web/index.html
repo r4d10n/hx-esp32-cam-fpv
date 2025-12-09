@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 FPV Video Stream</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #1a1a2e;
+            color: #eee;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            background: #16213e;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #0f3460;
+        }
+        h1 {
+            font-size: 1.4em;
+            color: #e94560;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #555;
+        }
+        .status-dot.connected {
+            background: #4caf50;
+            box-shadow: 0 0 8px #4caf50;
+        }
+        .status-dot.connecting {
+            background: #ff9800;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            max-width: 100%;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        #videoCanvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 10px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85em;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            width: 100%;
+            max-width: 800px;
+            margin-top: 20px;
+        }
+        .stat-card {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #e94560;
+        }
+        .stat-label {
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 5px;
+        }
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #f05573;
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        input[type="text"] {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            color: #eee;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 1em;
+            width: 250px;
+        }
+        .no-webcodecs {
+            background: #ff5722;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin: 20px;
+        }
+        .log {
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            max-width: 800px;
+            width: 100%;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.85em;
+        }
+        .log-entry {
+            margin: 4px 0;
+        }
+        .log-entry.error { color: #f44336; }
+        .log-entry.warn { color: #ff9800; }
+        .log-entry.info { color: #4caf50; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>ESP32 FPV Video</h1>
+        <div class="status">
+            <div id="statusDot" class="status-dot"></div>
+            <span id="statusText">Disconnected</span>
+        </div>
+    </header>
+
+    <main>
+        <div id="noWebCodecs" class="no-webcodecs" style="display: none;">
+            WebCodecs API is not supported in this browser.<br>
+            Please use Chrome 94+, Edge 94+, or Opera 80+
+        </div>
+
+        <div class="video-container">
+            <canvas id="videoCanvas" width="1280" height="720"></canvas>
+            <div class="overlay">
+                <span id="resolution">--</span>
+                <span id="codec">--</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <input type="text" id="wsUrl" placeholder="WebSocket URL" value="">
+            <button id="connectBtn" onclick="toggleConnection()">Connect</button>
+            <button onclick="toggleFullscreen()">Fullscreen</button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="fps">0</div>
+                <div class="stat-label">FPS</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="bitrate">0</div>
+                <div class="stat-label">Bitrate (kbps)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="latency">0</div>
+                <div class="stat-label">Latency (ms)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="frames">0</div>
+                <div class="stat-label">Frames</div>
+            </div>
+        </div>
+
+        <div class="log" id="logContainer"></div>
+    </main>
+
+    <script src="webcodecs-player.js"></script>
+    <script>
+        // Initialize default URL based on current host
+        const defaultPort = 8080;
+        const host = window.location.hostname || 'localhost';
+        document.getElementById('wsUrl').value = `ws://${host}:${defaultPort}/video`;
+
+        // Check WebCodecs support
+        if (typeof VideoDecoder === 'undefined') {
+            document.getElementById('noWebCodecs').style.display = 'block';
+            document.getElementById('connectBtn').disabled = true;
+        }
+
+        let player = null;
+
+        function toggleConnection() {
+            if (player && player.isConnected()) {
+                player.disconnect();
+            } else {
+                const url = document.getElementById('wsUrl').value;
+                player = new WebCodecsPlayer('videoCanvas', {
+                    url: url,
+                    onStatusChange: updateStatus,
+                    onStats: updateStats,
+                    onLog: addLog
+                });
+                player.connect();
+            }
+        }
+
+        function updateStatus(connected, message) {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            const btn = document.getElementById('connectBtn');
+
+            if (connected) {
+                dot.className = 'status-dot connected';
+                text.textContent = 'Connected';
+                btn.textContent = 'Disconnect';
+            } else if (message === 'connecting') {
+                dot.className = 'status-dot connecting';
+                text.textContent = 'Connecting...';
+                btn.textContent = 'Cancel';
+            } else {
+                dot.className = 'status-dot';
+                text.textContent = message || 'Disconnected';
+                btn.textContent = 'Connect';
+            }
+        }
+
+        function updateStats(stats) {
+            document.getElementById('fps').textContent = stats.fps.toFixed(1);
+            document.getElementById('bitrate').textContent = stats.bitrate.toFixed(0);
+            document.getElementById('latency').textContent = stats.latency.toFixed(0);
+            document.getElementById('frames').textContent = stats.frames;
+
+            if (stats.resolution) {
+                document.getElementById('resolution').textContent = stats.resolution;
+            }
+            if (stats.codec) {
+                document.getElementById('codec').textContent = stats.codec;
+            }
+        }
+
+        function addLog(level, message) {
+            const container = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${level}`;
+            const time = new Date().toLocaleTimeString();
+            entry.textContent = `[${time}] ${message}`;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+
+            // Limit log entries
+            while (container.children.length > 100) {
+                container.removeChild(container.firstChild);
+            }
+        }
+
+        function toggleFullscreen() {
+            const container = document.querySelector('.video-container');
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            } else {
+                container.requestFullscreen();
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'f') toggleFullscreen();
+            if (e.key === ' ') toggleConnection();
+        });
+    </script>
+</body>
+</html>
