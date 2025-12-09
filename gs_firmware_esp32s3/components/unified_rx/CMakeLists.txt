@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        "src/unified_rx.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        wfb_rx
+        gs_fec_decoder
+        esp_wifi
+)

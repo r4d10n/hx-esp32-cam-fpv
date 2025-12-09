@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ESP32 FPV Ground Station</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a12;
+            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        header {
+            background: linear-gradient(90deg, #1a1a2e, #16213e);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #e94560;
+            flex-shrink: 0;
+        }
+        h1 {
+            font-size: 1.2em;
+            color: #e94560;
+            font-weight: 600;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.85em;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #555;
+        }
+        .status-dot.connected { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+        .status-dot.connecting { background: #ff9800; animation: pulse 1s infinite; }
+        .status-dot.usb { background: #2196f3; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .video-section {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #000;
+            position: relative;
+            overflow: hidden;
+        }
+        #videoCanvas {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .osd-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 10px 15px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%);
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+        }
+        .osd-left, .osd-right {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            font-size: 0.75em;
+            font-family: monospace;
+            text-shadow: 1px 1px 2px #000;
+        }
+        .osd-value {
+            color: #4caf50;
+        }
+        .osd-warn {
+            color: #ff9800;
+        }
+        .osd-error {
+            color: #f44336;
+        }
+        .controls-bar {
+            background: #16213e;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            border-top: 1px solid #0f3460;
+            flex-shrink: 0;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        label {
+            font-size: 0.85em;
+            color: #888;
+        }
+        select, input[type="number"] {
+            background: #0a0a12;
+            border: 1px solid #0f3460;
+            color: #e0e0e0;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        button {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+        }
+        button:hover { background: #f05573; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        button.secondary {
+            background: #0f3460;
+        }
+        button.secondary:hover { background: #1a4a7a; }
+        .stats-bar {
+            background: #0a0a12;
+            padding: 8px 20px;
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            font-size: 0.8em;
+            flex-shrink: 0;
+        }
+        .stat {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .stat-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #e94560;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 0.85em;
+        }
+        .fullscreen .video-section {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1000;
+        }
+        .fullscreen header, .fullscreen .controls-bar, .fullscreen .stats-bar {
+            display: none;
+        }
+        .no-webcodecs {
+            background: #e94560;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-size: 0.9em;
+        }
+        @media (max-width: 600px) {
+            header { padding: 8px 10px; }
+            h1 { font-size: 1em; }
+            .controls-bar { padding: 8px 10px; }
+            .stats-bar { gap: 15px; padding: 6px 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="app">
+        <div id="noWebCodecs" class="no-webcodecs" style="display: none;">
+            WebCodecs API not supported. H.264/H.265 decoding unavailable.
+            MJPEG will still work.
+        </div>
+
+        <header>
+            <h1>ESP32 FPV Ground Station</h1>
+            <div class="status">
+                <div class="status-item">
+                    <div id="wsDot" class="status-dot"></div>
+                    <span id="wsStatus">Disconnected</span>
+                </div>
+                <div class="status-item">
+                    <div id="usbDot" class="status-dot"></div>
+                    <span>USB</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="video-section">
+            <canvas id="videoCanvas" width="800" height="600"></canvas>
+            <div class="osd-overlay">
+                <div class="osd-left">
+                    <div>CH: <span id="osdChannel" class="osd-value">7</span></div>
+                    <div>RSSI: <span id="osdRssi" class="osd-value">-60</span> dBm</div>
+                    <div>SNR: <span id="osdSnr" class="osd-value">25</span> dB</div>
+                </div>
+                <div class="osd-right">
+                    <div><span id="osdCodec" class="osd-value">MJPEG</span></div>
+                    <div><span id="osdRes" class="osd-value">800x600</span></div>
+                    <div>FPS: <span id="osdFps" class="osd-value">30</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-bar">
+            <div class="stat">
+                <span class="stat-value" id="statFps">0</span>
+                <span class="stat-label">FPS</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="statBitrate">0</span>
+                <span class="stat-label">kbps</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="statLatency">0</span>
+                <span class="stat-label">ms</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="statFrames">0</span>
+                <span class="stat-label">Frames</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="statLost">0</span>
+                <span class="stat-label">Lost</span>
+            </div>
+        </div>
+
+        <div class="controls-bar">
+            <div class="control-group">
+                <label>Channel:</label>
+                <select id="channelSelect">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="7" selected>7</option>
+                    <option value="8">8</option>
+                    <option value="9">9</option>
+                    <option value="10">10</option>
+                    <option value="11">11</option>
+                    <option value="12">12</option>
+                    <option value="13">13</option>
+                </select>
+                <label>Latency:</label>
+                <input type="number" id="latencyInput" value="100" min="20" max="500" step="10" style="width:60px">
+                <span>ms</span>
+                <button onclick="applyConfig()">Apply</button>
+            </div>
+            <div class="control-group">
+                <button id="connectBtn" onclick="toggleConnection()">Connect</button>
+                <button class="secondary" onclick="toggleFullscreen()">Fullscreen</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="player.js"></script>
+    <script>
+        let player = null;
+        let statsInterval = null;
+
+        // Check WebCodecs support
+        if (typeof VideoDecoder === 'undefined') {
+            document.getElementById('noWebCodecs').style.display = 'block';
+        }
+
+        function toggleConnection() {
+            if (player && player.isConnected()) {
+                player.disconnect();
+            } else {
+                const wsUrl = `ws://${window.location.hostname}:8080/video`;
+                player = new FPVPlayer('videoCanvas', {
+                    wsUrl: wsUrl,
+                    onStatus: updateStatus,
+                    onStats: updateStats,
+                    onCodecChange: updateCodecInfo
+                });
+                player.connect();
+            }
+        }
+
+        function updateStatus(connected, message) {
+            const dot = document.getElementById('wsDot');
+            const status = document.getElementById('wsStatus');
+            const btn = document.getElementById('connectBtn');
+
+            if (connected) {
+                dot.className = 'status-dot connected';
+                status.textContent = 'Connected';
+                btn.textContent = 'Disconnect';
+                startStatsPolling();
+            } else if (message === 'connecting') {
+                dot.className = 'status-dot connecting';
+                status.textContent = 'Connecting...';
+            } else {
+                dot.className = 'status-dot';
+                status.textContent = message || 'Disconnected';
+                btn.textContent = 'Connect';
+                stopStatsPolling();
+            }
+        }
+
+        function updateStats(stats) {
+            document.getElementById('statFps').textContent = stats.fps.toFixed(1);
+            document.getElementById('statBitrate').textContent = Math.round(stats.bitrate);
+            document.getElementById('statLatency').textContent = Math.round(stats.latency);
+            document.getElementById('statFrames').textContent = stats.frames;
+            document.getElementById('statLost').textContent = stats.dropped || 0;
+
+            document.getElementById('osdFps').textContent = stats.fps.toFixed(1);
+            if (stats.rssi) {
+                document.getElementById('osdRssi').textContent = stats.rssi;
+                const rssiEl = document.getElementById('osdRssi');
+                rssiEl.className = stats.rssi > -70 ? 'osd-value' :
+                                   stats.rssi > -80 ? 'osd-warn' : 'osd-error';
+            }
+            if (stats.snr) {
+                document.getElementById('osdSnr').textContent = stats.snr;
+            }
+        }
+
+        function updateCodecInfo(codec, width, height) {
+            const codecNames = {1: 'MJPEG', 2: 'H.264', 3: 'H.265'};
+            document.getElementById('osdCodec').textContent = codecNames[codec] || 'Unknown';
+            document.getElementById('osdRes').textContent = `${width}x${height}`;
+        }
+
+        function startStatsPolling() {
+            if (statsInterval) return;
+            statsInterval = setInterval(async () => {
+                try {
+                    const resp = await fetch('/api/stats');
+                    const data = await resp.json();
+                    document.getElementById('osdChannel').textContent = data.channel || '?';
+                    document.getElementById('osdRssi').textContent = data.rssi || '?';
+                    document.getElementById('osdSnr').textContent = data.snr || '?';
+                    document.getElementById('usbDot').className =
+                        'status-dot' + (data.usb ? ' usb' : '');
+                } catch (e) {}
+            }, 2000);
+        }
+
+        function stopStatsPolling() {
+            if (statsInterval) {
+                clearInterval(statsInterval);
+                statsInterval = null;
+            }
+        }
+
+        async function applyConfig() {
+            const channel = document.getElementById('channelSelect').value;
+            const latency = document.getElementById('latencyInput').value;
+            try {
+                await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({channel: parseInt(channel), latency: parseInt(latency)})
+                });
+            } catch (e) {
+                console.error('Failed to apply config:', e);
+            }
+        }
+
+        function toggleFullscreen() {
+            document.getElementById('app').classList.toggle('fullscreen');
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            } else {
+                document.documentElement.requestFullscreen();
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'f') toggleFullscreen();
+            if (e.key === ' ') toggleConnection();
+            if (e.key === 'Escape' && document.fullscreenElement) {
+                document.exitFullscreen();
+            }
+        });
+
+        // Auto-connect on load
+        setTimeout(() => {
+            toggleConnection();
+        }, 500);
+    </script>
+</body>
+</html>

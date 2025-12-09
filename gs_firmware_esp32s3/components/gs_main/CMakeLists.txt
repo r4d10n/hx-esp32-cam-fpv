@@ -1,0 +1,14 @@
+idf_component_register(
+    SRCS
+        "src/gs_main.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        usb_ncm
+        unified_rx
+        frame_buffer
+        video_ws_server
+        esp_wifi
+        esp_http_server
+        nvs_flash
+)
