@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        "src/wfb_bridge.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        wfb_rx
+        video_ws_server
+        esp_wifi
+)
