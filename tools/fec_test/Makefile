@@ -8,15 +8,18 @@ INCLUDES = -I. -I../../components/common -I../../components/gs_fec_decoder/inclu
 SOURCES = main.cpp pcap_parser.cpp ../../components/common/fec.cpp
 TARGET = fec_test
 
-.PHONY: all clean test
+.PHONY: all clean test unit_test
 
 all: $(TARGET)
 
 $(TARGET): $(SOURCES)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
 
+unit_test: unit_test.cpp ../../components/common/fec.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
+
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) unit_test
 
 # Test with a sample PCAP file (if available)
 test: $(TARGET)
