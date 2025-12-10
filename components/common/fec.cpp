@@ -199,7 +199,7 @@ generate_gf (void) {
 
 #define UNROLL 16               /* 1, 4, 8, 16 */
 static void
-_addmul1(register gf*restrict dst, const register gf*restrict src, gf c, size_t sz) {
+_addmul1(register gf* FEC_RESTRICT dst, const register gf* FEC_RESTRICT src, gf c, size_t sz) {
     USE_GF_MULC;
     const gf* lim = &dst[sz - UNROLL + 1];
 
@@ -504,7 +504,7 @@ fec_new(unsigned short k, unsigned short n) {
 #endif
 
 void
-fec_encode(const fec_t* code, const gf*restrict const*restrict const src, gf*restrict const*restrict const fecs, const unsigned*restrict const block_nums, size_t num_block_nums, size_t sz) {
+fec_encode(const fec_t* code, const gf* FEC_RESTRICT const* FEC_RESTRICT const src, gf* FEC_RESTRICT const* FEC_RESTRICT const fecs, const unsigned* FEC_RESTRICT const block_nums, size_t num_block_nums, size_t sz) {
     unsigned char i, j;
     size_t k;
     unsigned fecnum;
@@ -524,7 +524,7 @@ fec_encode(const fec_t* code, const gf*restrict const*restrict const src, gf*res
 }
 
 void
-fec_encode_block(const fec_t* code, const gf*restrict const*restrict const src, gf*restrict const fec, const unsigned*restrict const block_nums, int fec_block_index, size_t sz) {
+fec_encode_block(const fec_t* code, const gf* FEC_RESTRICT const* FEC_RESTRICT const src, gf* FEC_RESTRICT const fec, const unsigned* FEC_RESTRICT const block_nums, int fec_block_index, size_t sz) {
     unsigned char j;
     //size_t k;
     unsigned fecnum;
@@ -545,7 +545,7 @@ fec_encode_block(const fec_t* code, const gf*restrict const*restrict const src, 
  * @param matrix a space allocated for a k by k matrix
  */
 void
-build_decode_matrix_into_space(const fec_t*restrict const code, const unsigned*const restrict index, const unsigned k, gf*restrict const matrix) {
+build_decode_matrix_into_space(const fec_t* FEC_RESTRICT const code, const unsigned* const FEC_RESTRICT index, const unsigned k, gf* FEC_RESTRICT const matrix) {
     unsigned char i;
     gf* p;
     for (i=0, p=matrix; i < k; i++, p += k) {
@@ -560,7 +560,7 @@ build_decode_matrix_into_space(const fec_t*restrict const code, const unsigned*c
 }
 
 void
-fec_decode(const fec_t* code, const gf*restrict const*restrict const inpkts, gf*restrict const*restrict const outpkts, const unsigned*restrict const index, size_t sz) {
+fec_decode(const fec_t* code, const gf* FEC_RESTRICT const* FEC_RESTRICT const inpkts, gf* FEC_RESTRICT const* FEC_RESTRICT const outpkts, const unsigned* FEC_RESTRICT const index, size_t sz) {
     gf* m_dec = (gf*)alloca(code->k * code->k);
     unsigned char outix=0;
     unsigned char row=0;
