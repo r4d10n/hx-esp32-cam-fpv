@@ -53,3 +53,4 @@ tools/fec_test/fec_test
 
 # Test directory
 test/
+tools/fec_test/unit_test
