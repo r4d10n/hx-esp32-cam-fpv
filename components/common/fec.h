@@ -38,14 +38,14 @@ struct fec_t {
   gf* enc_matrix;
 };
 
-#if defined(_MSC_VER)
-// actually, some of the flavors (i.e. Enterprise) do support restrict
-#define restrict
-#endif
-#define restrict __restrict
+// FEC_RESTRICT is intentionally empty to ensure consistent symbol mangling
+// across all translation units. The restrict keyword is just an optimization hint
+// and its presence in function signatures causes C++ name mangling differences
+// that lead to linker errors.
+#define FEC_RESTRICT
 
 void init_fec (void);
-  
+
 /**
  * param k the number of blocks required to reconstruct
  * param m the total number of blocks created
@@ -60,9 +60,9 @@ void fec_free(fec_t* p);
  * @param num_block_nums the length of the block_nums array
  * @param sz size of a packet in bytes
  */
-void fec_encode(const fec_t* code, const gf*restrict const*restrict const src, gf*restrict const*restrict const fecs, const unsigned*restrict const block_nums, size_t num_block_nums, size_t sz);
+void fec_encode(const fec_t* code, const gf* FEC_RESTRICT const* FEC_RESTRICT const src, gf* FEC_RESTRICT const* FEC_RESTRICT const fecs, const unsigned* FEC_RESTRICT const block_nums, size_t num_block_nums, size_t sz);
 
-void fec_encode_block(const fec_t* code, const gf*restrict const*restrict const src, gf*restrict const fec, const unsigned*restrict const block_nums, int fec_block_index, size_t sz);
+void fec_encode_block(const fec_t* code, const gf* FEC_RESTRICT const* FEC_RESTRICT const src, gf* FEC_RESTRICT const fec, const unsigned* FEC_RESTRICT const block_nums, int fec_block_index, size_t sz);
 
 /**
  * @param inpkts an array of packets (size k); If a primary block, i, is present then it must be at index i. Secondary blocks can appear anywhere.
@@ -70,7 +70,7 @@ void fec_encode_block(const fec_t* code, const gf*restrict const*restrict const 
  * @param index an array of the blocknums of the packets in inpkts
  * @param sz size of a packet in bytes
  */
-void fec_decode(const fec_t* code, const gf*restrict const*restrict const inpkts, gf*restrict const*restrict const outpkts, const unsigned*restrict const index, size_t sz);
+void fec_decode(const fec_t* code, const gf* FEC_RESTRICT const* FEC_RESTRICT const inpkts, gf* FEC_RESTRICT const* FEC_RESTRICT const outpkts, const unsigned* FEC_RESTRICT const index, size_t sz);
 
 #if defined(_MSC_VER)
 #define alloca _alloca
